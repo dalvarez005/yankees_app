@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_colors.dart';
 import '../../../app/routes.dart';
+import '../data/app_user.dart';
 import '../data/auth_repository.dart';
 import 'validators.dart';
 import 'widgets/auth_field.dart';
 import 'widgets/auth_header.dart';
 import 'widgets/auth_switch_link.dart';
+import 'widgets/google_button.dart';
 import 'widgets/loading_button.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -18,17 +20,17 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
-  final _name = TextEditingController();
-  final _phone = TextEditingController();
   final _email = TextEditingController();
+  final _firstName = TextEditingController();
+  final _firstLastName = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
-  bool _acceptedTerms = false;
   bool _loading = false;
+  bool _googleLoading = false;
 
   @override
   void dispose() {
-    for (final c in [_name, _phone, _email, _password, _confirm]) {
+    for (final c in [_email, _firstName, _firstLastName, _password, _confirm]) {
       c.dispose();
     }
     super.dispose();
@@ -37,21 +39,15 @@ class _RegisterPageState extends State<RegisterPage> {
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
-    if (!_acceptedTerms) {
-      _showError('Debes aceptar los términos y condiciones');
-      return;
-    }
     setState(() => _loading = true);
     try {
       final user = await AuthRepository.instance.register(
-        fullName: _name.text,
         email: _email.text,
-        phone: _phone.text,
+        firstName: _firstName.text,
+        firstLastName: _firstLastName.text,
         password: _password.text,
       );
-      if (!mounted) return;
-      Navigator.of(context)
-          .pushNamedAndRemoveUntil(Routes.home, (_) => false, arguments: user);
+      _goHome(user);
     } on AuthException catch (e) {
       _showError(e.message);
     } finally {
@@ -59,7 +55,26 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
+  Future<void> _google() async {
+    FocusScope.of(context).unfocus();
+    setState(() => _googleLoading = true);
+    try {
+      _goHome(await AuthRepository.instance.signInWithGoogle());
+    } on AuthException catch (e) {
+      _showError(e.message);
+    } finally {
+      if (mounted) setState(() => _googleLoading = false);
+    }
+  }
+
+  void _goHome(AppUser user) {
+    if (!mounted) return;
+    Navigator.of(context)
+        .pushNamedAndRemoveUntil(Routes.home, (_) => false, arguments: user);
+  }
+
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -93,27 +108,29 @@ class _RegisterPageState extends State<RegisterPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          GoogleButton(
+                            loading: _googleLoading,
+                            onPressed: _loading ? null : _google,
+                          ),
+                          const OrDivider(),
                           AuthField(
-                            label: 'Nombre completo',
-                            hint: 'Ej. Carlos Pérez',
-                            icon: Icons.person_outline_rounded,
-                            controller: _name,
+                            label: 'Nombre',
+                            hint: 'Ej. Carlos',
+                            icon: Icons.badge_outlined,
+                            controller: _firstName,
                             textCapitalization: TextCapitalization.words,
-                            autofillHints: const [AutofillHints.name],
-                            validator: (v) =>
-                                Validators.required(v, 'El nombre'),
+                            autofillHints: const [AutofillHints.givenName],
+                            validator: (v) => Validators.name(v, 'El nombre'),
                           ),
                           const SizedBox(height: 16),
                           AuthField(
-                            label: 'Teléfono',
-                            hint: 'Ej. 5555 5555',
-                            icon: Icons.phone_outlined,
-                            controller: _phone,
-                            keyboardType: TextInputType.phone,
-                            autofillHints: const [
-                              AutofillHints.telephoneNumber,
-                            ],
-                            validator: Validators.phone,
+                            label: 'Primer apellido',
+                            hint: 'Ej. Pérez',
+                            icon: Icons.badge_outlined,
+                            controller: _firstLastName,
+                            textCapitalization: TextCapitalization.words,
+                            autofillHints: const [AutofillHints.familyName],
+                            validator: (v) => Validators.name(v, 'El apellido'),
                           ),
                           const SizedBox(height: 16),
                           AuthField(
@@ -143,32 +160,15 @@ class _RegisterPageState extends State<RegisterPage> {
                             controller: _confirm,
                             isPassword: true,
                             textInputAction: TextInputAction.done,
-                            validator: (v) => v != _password.text
-                                ? 'Las contraseñas no coinciden'
-                                : null,
+                            validator: (v) =>
+                                Validators.confirmPassword(v, _password.text),
                             onSubmitted: (_) => _submit(),
                           ),
-                          const SizedBox(height: 8),
-                          CheckboxListTile(
-                            value: _acceptedTerms,
-                            onChanged: (v) =>
-                                setState(() => _acceptedTerms = v ?? false),
-                            contentPadding: EdgeInsets.zero,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            dense: true,
-                            title: const Text(
-                              'Acepto los términos y condiciones y el uso de mis datos por el club.',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textMuted,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 24),
                           LoadingButton(
                             label: 'Crear cuenta',
                             loading: _loading,
-                            onPressed: _submit,
+                            onPressed: _googleLoading ? null : _submit,
                           ),
                           const SizedBox(height: 12),
                           AuthSwitchLink(

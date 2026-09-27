@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_colors.dart';
 import '../../../app/routes.dart';
+import '../data/app_user.dart';
 import '../data/auth_repository.dart';
 import 'validators.dart';
 import 'widgets/auth_field.dart';
 import 'widgets/auth_header.dart';
 import 'widgets/auth_switch_link.dart';
+import 'widgets/google_button.dart';
 import 'widgets/loading_button.dart';
 
 class LoginPage extends StatefulWidget {
@@ -21,6 +23,9 @@ class _LoginPageState extends State<LoginPage> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _loading = false;
+  bool _googleLoading = false;
+
+  bool get _busy => _loading || _googleLoading;
 
   @override
   void dispose() {
@@ -38,9 +43,7 @@ class _LoginPageState extends State<LoginPage> {
         email: _email.text,
         password: _password.text,
       );
-      if (!mounted) return;
-      Navigator.of(context)
-          .pushNamedAndRemoveUntil(Routes.home, (_) => false, arguments: user);
+      _goHome(user);
     } on AuthException catch (e) {
       _showMessage(e.message, error: true);
     } finally {
@@ -48,9 +51,26 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> _google() async {
+    FocusScope.of(context).unfocus();
+    setState(() => _googleLoading = true);
+    try {
+      _goHome(await AuthRepository.instance.signInWithGoogle());
+    } on AuthException catch (e) {
+      _showMessage(e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _googleLoading = false);
+    }
+  }
+
+  void _goHome(AppUser user) {
+    if (!mounted) return;
+    Navigator.of(context)
+        .pushNamedAndRemoveUntil(Routes.home, (_) => false, arguments: user);
+  }
+
   Future<void> _forgotPassword() async {
-    final error = Validators.email(_email.text);
-    if (error != null) {
+    if (Validators.email(_email.text) != null) {
       _showMessage('Escribe tu correo arriba para recuperar tu contraseña');
       return;
     }
@@ -116,7 +136,7 @@ class _LoginPageState extends State<LoginPage> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
-                              onPressed: _loading ? null : _forgotPassword,
+                              onPressed: _busy ? null : _forgotPassword,
                               child: const Text('¿Olvidaste tu contraseña?'),
                             ),
                           ),
@@ -124,7 +144,12 @@ class _LoginPageState extends State<LoginPage> {
                           LoadingButton(
                             label: 'Ingresar',
                             loading: _loading,
-                            onPressed: _submit,
+                            onPressed: _googleLoading ? null : _submit,
+                          ),
+                          const OrDivider(),
+                          GoogleButton(
+                            loading: _googleLoading,
+                            onPressed: _loading ? null : _google,
                           ),
                           const SizedBox(height: 12),
                           AuthSwitchLink(

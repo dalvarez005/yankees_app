@@ -16,8 +16,10 @@ class AuthSwitchLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    // Wrap para que no se desborde con letra grande de accesibilidad.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(question, style: const TextStyle(color: AppColors.textMuted)),
         TextButton(onPressed: onTap, child: Text(action)),

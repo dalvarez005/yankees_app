@@ -62,17 +62,20 @@ class _AuthFieldState extends State<AuthField> {
           decoration: InputDecoration(
             hintText: widget.hint,
             prefixIcon: Icon(widget.icon, size: 20),
+            // ExcludeFocus: que "Siguiente"/Tab salte al próximo campo y no al ojo.
             suffixIcon: widget.isPassword
-                ? IconButton(
-                    tooltip: _obscure
-                        ? 'Mostrar contraseña'
-                        : 'Ocultar contraseña',
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                    icon: Icon(
-                      _obscure
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                      size: 20,
+                ? ExcludeFocus(
+                    child: IconButton(
+                      tooltip: _obscure
+                          ? 'Mostrar contraseña'
+                          : 'Ocultar contraseña',
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                      icon: Icon(
+                        _obscure
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        size: 20,
+                      ),
                     ),
                   )
                 : null,

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -47,19 +48,7 @@ class AuthHeader extends StatelessWidget {
                     children: [
                       SizedBox(
                         height: 44,
-                        child: showBack
-                            ? IconButton(
-                                padding: EdgeInsets.zero,
-                                alignment: Alignment.centerLeft,
-                                onPressed: () =>
-                                    Navigator.of(context).maybePop(),
-                                icon: const Icon(
-                                  Icons.arrow_back_ios_new_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              )
-                            : null,
+                        child: showBack ? const _BackButton() : null,
                       ),
                       const _ClubBadge(),
                       const SizedBox(height: 28),
@@ -85,6 +74,35 @@ class AuthHeader extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Botón atrás estilo iOS: chevron + "Atrás", arriba a la izquierda.
+class _BackButton extends StatelessWidget {
+  const _BackButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: CupertinoButton(
+        padding: const EdgeInsets.only(right: 12),
+        minimumSize: const Size(44, 44),
+        onPressed: () => Navigator.of(context).maybePop(),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+            SizedBox(width: 4),
+            Text('Atrás', style: TextStyle(color: Colors.white, fontSize: 17)),
+          ],
         ),
       ),
     );

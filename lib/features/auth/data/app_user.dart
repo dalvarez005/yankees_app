@@ -3,17 +3,18 @@ enum UserRole { admin, parent }
 class AppUser {
   const AppUser({
     required this.id,
-    required this.fullName,
     required this.email,
-    required this.phone,
+    required this.firstName,
+    required this.firstLastName,
     required this.role,
   });
 
   final String id;
-  final String fullName;
   final String email;
-  final String phone;
+  final String firstName;
+  final String firstLastName;
   final UserRole role;
 
+  String get fullName => '$firstName $firstLastName';
   bool get isAdmin => role == UserRole.admin;
 }

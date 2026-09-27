@@ -8,19 +8,25 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
-/// Contrato de autenticación. Cuando elijamos backend (Firebase, Supabase,
-/// API propia) se crea otra implementación y se cambia en [AuthRepository.instance].
+/// Contrato de autenticación. Cuando la API esté lista se crea otra
+/// implementación y se cambia en [AuthRepository.instance].
 abstract class AuthRepository {
   static AuthRepository instance = MockAuthRepository();
 
   Future<AppUser> signIn({required String email, required String password});
 
+  /// Campos de la API: user_name (el correo), user_first_name,
+  /// user_first_lastname, user_pass.
   Future<AppUser> register({
-    required String fullName,
     required String email,
-    required String phone,
+    required String firstName,
+    required String firstLastName,
     required String password,
   });
+
+  /// Inicia sesión o crea la cuenta con Google. En la implementación real:
+  /// obtener el idToken con el paquete google_sign_in y mandarlo a la API.
+  Future<AppUser> signInWithGoogle();
 
   Future<void> sendPasswordReset(String email);
 
@@ -36,9 +42,9 @@ class MockAuthRepository implements AuthRepository {
     'admin@yankees.com': (
       user: const AppUser(
         id: '1',
-        fullName: 'Administración Yankees',
         email: 'admin@yankees.com',
-        phone: '',
+        firstName: 'Administración',
+        firstLastName: 'Yankees',
         role: UserRole.admin,
       ),
       password: 'admin123',
@@ -46,9 +52,9 @@ class MockAuthRepository implements AuthRepository {
     'padre@yankees.com': (
       user: const AppUser(
         id: '2',
-        fullName: 'Carlos Pérez',
         email: 'padre@yankees.com',
-        phone: '55555555',
+        firstName: 'Carlos',
+        firstLastName: 'Pérez',
         role: UserRole.parent,
       ),
       password: 'padre123',
@@ -72,9 +78,9 @@ class MockAuthRepository implements AuthRepository {
 
   @override
   Future<AppUser> register({
-    required String fullName,
     required String email,
-    required String phone,
+    required String firstName,
+    required String firstLastName,
     required String password,
   }) async {
     await _latency();
@@ -85,13 +91,25 @@ class MockAuthRepository implements AuthRepository {
     // Todo registro público es de padre/tutor; los admins los crea el club.
     final user = AppUser(
       id: '${_users.length + 1}',
-      fullName: fullName.trim(),
       email: key,
-      phone: phone.trim(),
+      firstName: firstName.trim(),
+      firstLastName: firstLastName.trim(),
       role: UserRole.parent,
     );
     _users[key] = (user: user, password: password);
     return user;
+  }
+
+  @override
+  Future<AppUser> signInWithGoogle() async {
+    await _latency();
+    return const AppUser(
+      id: 'g-1',
+      email: 'maria.lopez@gmail.com',
+      firstName: 'María',
+      firstLastName: 'López',
+      role: UserRole.parent,
+    );
   }
 
   @override
