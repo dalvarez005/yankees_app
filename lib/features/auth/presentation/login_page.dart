@@ -4,6 +4,7 @@ import '../../../app/app_colors.dart';
 import '../../../app/routes.dart';
 import '../data/app_user.dart';
 import '../data/auth_repository.dart';
+import '../../profile/presentation/enter_app.dart';
 import 'validators.dart';
 import 'widgets/auth_field.dart';
 import 'widgets/auth_header.dart';
@@ -66,8 +67,7 @@ class _LoginPageState extends State<LoginPage> {
 
   void _goHome(AppUser user) {
     if (!mounted) return;
-    Navigator.of(context)
-        .pushNamedAndRemoveUntil(Routes.home, (_) => false, arguments: user);
+    enterApp(context, user);
   }
 
   Future<void> _forgotPassword() async {

@@ -338,6 +338,72 @@ void main() {
     });
   });
 
+  group('perfil', () {
+    test(
+      'updateProfile manda U con el userId de la sesión y relee /me',
+      () async {
+        final r = repo((req) {
+          if (req.url.path == '/api/User/me') {
+            return json({
+              'responseCode': '00',
+              'userData': {
+                'userId': 'abc123',
+                'email': 'ana@test.com',
+                'firstName': 'Ana',
+                'secondName': 'María',
+                'firstLastName': 'Gómez',
+              },
+            });
+          }
+          if (req.url.path == '/api/User/ManageUser') {
+            return json({
+              'responseCode': '00',
+              'responseMessage': 'USER UPDATED SUCCESSFULLY',
+            });
+          }
+          return json(loginOk());
+        });
+        await r.signIn(email: 'ana@test.com', password: 'clave123');
+        requests.clear();
+
+        final user = await r.updateProfile(
+          const ProfileInput(
+            firstName: 'Ana',
+            secondName: 'María',
+            firstLastName: 'Gómez',
+            secondLastName: '',
+          ),
+        );
+
+        expect(requests.first.url.path, '/api/User/ManageUser');
+        expect(requests.first.headers['Authorization'], 'Bearer jwt-pw');
+        expect(sentBody(), {
+          'typeOperation': 'U',
+          'userData': {
+            'userId': 'abc123',
+            'firstName': 'Ana',
+            'secondName': 'María',
+            'firstLastName': 'Gómez',
+          },
+        });
+        expect(requests.last.url.path, '/api/User/me');
+        expect(user.legalName, 'Ana María Gómez');
+        expect(store.session!.user.secondName, 'María');
+      },
+    );
+
+    test('sin sesión no intenta actualizar', () async {
+      final r = repo((_) => json({}));
+      expect(
+        () => r.updateProfile(
+          const ProfileInput(firstName: 'A', firstLastName: 'B'),
+        ),
+        throwsA(isA<AuthException>()),
+      );
+      expect(requests, isEmpty);
+    });
+  });
+
   group('signInWithGoogle', () {
     Map<String, dynamic> googleOk({
       String? givenName = 'María José',

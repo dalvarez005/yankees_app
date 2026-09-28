@@ -13,7 +13,11 @@ import 'features/auth/data/auth_repository.dart';
 import 'features/auth/data/google_id_token_provider.dart';
 import 'features/auth/presentation/login_page.dart';
 import 'features/auth/presentation/register_page.dart';
+import 'features/family/data/dependent_repository.dart';
+import 'features/family/presentation/family_page.dart';
 import 'features/home/home_page.dart';
+import 'features/profile/data/profile_review_store.dart';
+import 'features/profile/presentation/confirm_profile_page.dart';
 
 final _navigatorKey = GlobalKey<NavigatorState>();
 final _messengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -33,11 +37,15 @@ Future<void> main() async {
       // Recuperar contraseña aún no existe en la API: se simula.
       pending: MockAuthRepository(),
     );
+    DependentRepository.instance = ApiDependentRepository(api);
   }
 
-  // Si quedó una sesión guardada, se entra directo sin pedir login.
+  // Si quedó una sesión guardada, se entra directo sin pedir login (salvo
+  // que falte confirmar los datos del perfil).
   final user = await AuthRepository.instance.restoreSession();
-  runApp(YankeesApp(initialUser: user));
+  final review =
+      user != null && await ProfileReviewStore.instance.needsReview(user);
+  runApp(YankeesApp(initialUser: user, reviewProfile: review));
 }
 
 /// La API rechazó el refresh token: se vuelve al login avisando.
@@ -58,10 +66,13 @@ void _onSessionExpired() {
 }
 
 class YankeesApp extends StatelessWidget {
-  const YankeesApp({super.key, this.initialUser});
+  const YankeesApp({super.key, this.initialUser, this.reviewProfile = false});
 
   /// Usuario de una sesión restaurada; null abre el login.
   final AppUser? initialUser;
+
+  /// Abrir en "Confirma tus datos" en vez del inicio.
+  final bool reviewProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -74,7 +85,12 @@ class YankeesApp extends StatelessWidget {
       onGenerateInitialRoutes: (_) => [
         initialUser == null
             ? _route(const RouteSettings(name: Routes.login))
-            : _route(RouteSettings(name: Routes.home, arguments: initialUser)),
+            : _route(
+                RouteSettings(
+                  name: reviewProfile ? Routes.confirmProfile : Routes.home,
+                  arguments: initialUser,
+                ),
+              ),
       ],
       onGenerateRoute: _route,
     );
@@ -83,9 +99,16 @@ class YankeesApp extends StatelessWidget {
   static Route<void> _route(RouteSettings settings) {
     final Widget page = switch (settings.name) {
       Routes.register => const RegisterPage(),
-      Routes.home => HomePage(user: settings.arguments! as AppUser),
+      Routes.home => _homeFor(settings.arguments! as AppUser),
+      Routes.confirmProfile => ConfirmProfilePage(
+        user: settings.arguments! as AppUser,
+      ),
       _ => const LoginPage(),
     };
     return MaterialPageRoute(builder: (_) => page, settings: settings);
   }
+
+  /// Padres/tutores ven su familia; el panel de admin aún es provisional.
+  static Widget _homeFor(AppUser user) =>
+      user.isAdmin ? HomePage(user: user) : FamilyPage(user: user);
 }

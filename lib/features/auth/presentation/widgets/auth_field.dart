@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../app/app_colors.dart';
 
@@ -17,6 +18,7 @@ class AuthField extends StatefulWidget {
     this.autofillHints,
     this.onSubmitted,
     this.textCapitalization = TextCapitalization.none,
+    this.inputFormatters,
   });
 
   final String label;
@@ -30,6 +32,7 @@ class AuthField extends StatefulWidget {
   final Iterable<String>? autofillHints;
   final ValueChanged<String>? onSubmitted;
   final TextCapitalization textCapitalization;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   State<AuthField> createState() => _AuthFieldState();
@@ -58,6 +61,7 @@ class _AuthFieldState extends State<AuthField> {
           autofillHints: widget.autofillHints,
           onFieldSubmitted: widget.onSubmitted,
           textCapitalization: widget.textCapitalization,
+          inputFormatters: widget.inputFormatters,
           autovalidateMode: AutovalidateMode.onUserInteraction,
           decoration: InputDecoration(
             hintText: widget.hint,

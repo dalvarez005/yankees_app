@@ -149,6 +149,9 @@ class ApiClient {
   static const _known = {
     'EMAIL ALREADY EXISTS': 'Ya existe una cuenta con ese correo.',
     'USERNAME ALREADY EXISTS': 'Ya existe una cuenta con ese correo.',
+    'CUI YA ASOCIADO A UN DEPENDIENTE ACTIVO': 'Ese CUI ya está registrado.',
+    'DEPENDENT NOT FOUND': 'No se encontró el registro. Actualiza la lista.',
+    'NO FIELDS TO UPDATE': 'No hay cambios para guardar.',
   };
 
   /// Traduce los mensajes conocidos (pueden venir varios separados por

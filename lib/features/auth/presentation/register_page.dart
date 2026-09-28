@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app_colors.dart';
-import '../../../app/routes.dart';
 import '../data/app_user.dart';
 import '../data/auth_repository.dart';
+import '../../profile/presentation/enter_app.dart';
 import 'validators.dart';
 import 'widgets/auth_field.dart';
 import 'widgets/auth_header.dart';
@@ -47,7 +47,7 @@ class _RegisterPageState extends State<RegisterPage> {
         firstLastName: _firstLastName.text,
         password: _password.text,
       );
-      _goHome(user);
+      _goHome(user, justRegistered: true);
     } on AuthException catch (e) {
       _showError(e.message);
     } finally {
@@ -68,10 +68,9 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
-  void _goHome(AppUser user) {
+  void _goHome(AppUser user, {bool justRegistered = false}) {
     if (!mounted) return;
-    Navigator.of(context)
-        .pushNamedAndRemoveUntil(Routes.home, (_) => false, arguments: user);
+    enterApp(context, user, justRegistered: justRegistered);
   }
 
   void _showError(String message) {

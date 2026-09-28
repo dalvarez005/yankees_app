@@ -113,24 +113,60 @@ class ApiAuthRepository implements AuthRepository {
     return known ?? await _withProfile(user);
   }
 
-  /// Completa nombre y apellido con `GET /api/User/me`. Si falla, se sigue
-  /// con lo que se tiene (la app muestra el correo).
+  /// Completa nombre y apellido con el perfil. Si falla, se sigue con lo
+  /// que se tiene (la app muestra el correo).
   Future<AppUser> _withProfile(AppUser user) async {
     try {
-      final json = await _api.get('/api/User/me');
-      final data = json['userData'] as Map<String, dynamic>? ?? const {};
-      final updated = AppUser(
-        id: _nonEmpty(data['userId']) ?? user.id,
-        email: _nonEmpty(data['email']) ?? user.email,
-        firstName: _nonEmpty(data['firstName']) ?? user.firstName,
-        firstLastName: _nonEmpty(data['firstLastName']) ?? user.firstLastName,
-        role: user.role,
-      );
-      await _session.updateUser(updated);
-      return updated;
-    } on ApiException {
+      return await fetchProfile();
+    } on AuthException {
       return user;
     }
+  }
+
+  @override
+  Future<AppUser> fetchProfile() async {
+    final current = _session.currentUser;
+    final json = await _call(() => _api.get('/api/User/me'));
+    _ensureSuccess(json, fallback: 'No se pudo cargar tu perfil.');
+    final data = json['userData'] as Map<String, dynamic>? ?? const {};
+    final user = AppUser(
+      id: _nonEmpty(data['userId']) ?? current?.id ?? '',
+      email: _nonEmpty(data['email']) ?? current?.email ?? '',
+      firstName: _nonEmpty(data['firstName']) ?? current?.firstName ?? '',
+      secondName: _nonEmpty(data['secondName']),
+      firstLastName:
+          _nonEmpty(data['firstLastName']) ?? current?.firstLastName ?? '',
+      secondLastName: _nonEmpty(data['secondLastName']),
+      role: current?.role ?? UserRole.parent,
+    );
+    await _session.updateUser(user);
+    return user;
+  }
+
+  /// `ManageUser` con `U`: la API solo deja modificar al propio usuario
+  /// (userId del token). Los campos vacíos no se envían: la API conserva
+  /// el valor anterior.
+  @override
+  Future<AppUser> updateProfile(ProfileInput input) async {
+    final userId = _session.currentUser?.id;
+    if (userId == null || userId.isEmpty) {
+      throw const AuthException('Tu sesión expiró. Inicia sesión de nuevo.');
+    }
+    String? opt(String? v) => (v == null || v.trim().isEmpty) ? null : v.trim();
+    final json = await _call(
+      () => _api.post('/api/User/ManageUser', {
+        'typeOperation': 'U',
+        'userData': {
+          'userId': userId,
+          'firstName': input.firstName.trim(),
+          'secondName': ?opt(input.secondName),
+          'firstLastName': input.firstLastName.trim(),
+          'secondLastName': ?opt(input.secondLastName),
+        },
+      }),
+    );
+    _ensureSuccess(json, fallback: 'No se pudieron guardar tus datos.');
+    return fetchProfile();
   }
 
   /// Todas las respuestas de login traen la sesión en `tokenData`.

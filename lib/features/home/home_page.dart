@@ -5,8 +5,7 @@ import '../../app/routes.dart';
 import '../auth/data/app_user.dart';
 import '../auth/data/auth_repository.dart';
 
-/// Pantalla temporal: confirma el login y el rol. Aquí irán los paneles
-/// de padre (hijos, saldo, comprobantes) y de admin.
+/// Pantalla temporal del administrador (los padres usan FamilyPage).
 class HomePage extends StatelessWidget {
   const HomePage({super.key, required this.user});
 

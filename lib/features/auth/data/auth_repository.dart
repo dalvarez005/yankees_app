@@ -34,7 +34,27 @@ abstract class AuthRepository {
   /// Al abrir la app: devuelve el usuario si hay una sesión guardada válida.
   Future<AppUser?> restoreSession();
 
+  /// Datos actuales del usuario con sesión, desde la API.
+  Future<AppUser> fetchProfile();
+
+  /// Actualiza nombres y apellidos del usuario con sesión.
+  Future<AppUser> updateProfile(ProfileInput input);
+
   Future<void> signOut();
+}
+
+class ProfileInput {
+  const ProfileInput({
+    required this.firstName,
+    required this.firstLastName,
+    this.secondName,
+    this.secondLastName,
+  });
+
+  final String firstName;
+  final String? secondName;
+  final String firstLastName;
+  final String? secondLastName;
 }
 
 /// Implementación en memoria para desarrollar la UI sin backend.
@@ -77,8 +97,10 @@ class MockAuthRepository implements AuthRepository {
     if (entry == null || entry.password != password) {
       throw const AuthException('Correo o contraseña incorrectos');
     }
-    return entry.user;
+    return _current = entry.user;
   }
+
+  AppUser? _current;
 
   @override
   Future<AppUser> register({
@@ -101,13 +123,13 @@ class MockAuthRepository implements AuthRepository {
       role: UserRole.parent,
     );
     _users[key] = (user: user, password: password);
-    return user;
+    return _current = user;
   }
 
   @override
   Future<AppUser?> signInWithGoogle() async {
     await _latency();
-    return const AppUser(
+    return _current = const AppUser(
       id: 'g-1',
       email: 'maria.lopez@gmail.com',
       firstName: 'María',
@@ -121,6 +143,30 @@ class MockAuthRepository implements AuthRepository {
 
   @override
   Future<AppUser?> restoreSession() async => null;
+
+  @override
+  Future<AppUser> fetchProfile() async {
+    await _latency();
+    final user = _current;
+    if (user == null) throw const AuthException('No hay sesión');
+    return user;
+  }
+
+  @override
+  Future<AppUser> updateProfile(ProfileInput input) async {
+    await _latency();
+    final user = _current;
+    if (user == null) throw const AuthException('No hay sesión');
+    return _current = AppUser(
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      firstName: input.firstName,
+      secondName: input.secondName,
+      firstLastName: input.firstLastName,
+      secondLastName: input.secondLastName,
+    );
+  }
 
   @override
   Future<void> signOut() async {}
