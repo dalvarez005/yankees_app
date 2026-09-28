@@ -55,7 +55,8 @@ class _LoginPageState extends State<LoginPage> {
     FocusScope.of(context).unfocus();
     setState(() => _googleLoading = true);
     try {
-      _goHome(await AuthRepository.instance.signInWithGoogle());
+      final user = await AuthRepository.instance.signInWithGoogle();
+      if (user != null) _goHome(user);
     } on AuthException catch (e) {
       _showMessage(e.message, error: true);
     } finally {

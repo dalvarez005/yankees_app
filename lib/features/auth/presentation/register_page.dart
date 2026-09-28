@@ -59,7 +59,8 @@ class _RegisterPageState extends State<RegisterPage> {
     FocusScope.of(context).unfocus();
     setState(() => _googleLoading = true);
     try {
-      _goHome(await AuthRepository.instance.signInWithGoogle());
+      final user = await AuthRepository.instance.signInWithGoogle();
+      if (user != null) _goHome(user);
     } on AuthException catch (e) {
       _showError(e.message);
     } finally {

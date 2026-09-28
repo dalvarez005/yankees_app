@@ -1,0 +1,443 @@
+import 'dart:convert';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:yankees/core/network/api_client.dart';
+import 'package:yankees/core/session/session_manager.dart';
+import 'package:yankees/core/session/session_store.dart';
+import 'package:yankees/features/auth/data/api_auth_repository.dart';
+import 'package:yankees/features/auth/data/auth_repository.dart';
+import 'package:yankees/features/auth/data/google_id_token_provider.dart';
+
+class _FakeGoogle implements GoogleIdTokenProvider {
+  _FakeGoogle(this.token);
+  final String? token;
+  bool signedOut = false;
+
+  @override
+  Future<String?> getIdToken() async => token;
+
+  @override
+  Future<void> signOut() async => signedOut = true;
+}
+
+class _ThrowingGoogle implements GoogleIdTokenProvider {
+  @override
+  Future<String?> getIdToken() => throw Exception('[16] Account reauth failed');
+
+  @override
+  Future<void> signOut() async {}
+}
+
+void main() {
+  late List<http.Request> requests;
+  late ApiClient api;
+  late MemorySessionStore store;
+
+  ApiAuthRepository repo(
+    http.Response Function(http.Request) handler, {
+    String? googleToken = 'id-token-123',
+  }) {
+    requests = [];
+    final client = MockClient((req) async {
+      requests.add(req);
+      return handler(req);
+    });
+    api = ApiClient(baseUrl: 'http://api.test', client: client);
+    store = MemorySessionStore();
+    final session = SessionManager(api: api, store: store);
+    api.authenticator = session;
+    return ApiAuthRepository(
+      api: api,
+      session: session,
+      google: _FakeGoogle(googleToken),
+      pending: MockAuthRepository(),
+    );
+  }
+
+  http.Response json(Object body, [int status = 200]) => http.Response(
+    jsonEncode(body),
+    status,
+    headers: {'content-type': 'application/json; charset=utf-8'},
+  );
+
+  Map<String, dynamic> sentBody([int i = 0]) =>
+      jsonDecode(requests[i].body) as Map<String, dynamic>;
+
+  Map<String, dynamic> loginOk() => {
+    'responseCode': '00',
+    'responseMessage': 'OPERACION EXITOSA',
+    'userId': 'abc123',
+    'authenticationMethod': 'password',
+    'sessionToken': 'jwt-pw',
+    'refreshToken': 'rt-pw',
+    'expiresIn': 3600,
+    'tokenType': 'Bearer',
+  };
+
+  group('register', () {
+    test(
+      'envía ManageUser y luego entra con las mismas credenciales',
+      () async {
+        final r = repo(
+          (req) => req.url.path == '/api/Auth/signin-password'
+              ? json(loginOk())
+              : json({
+                  'typeOperation': 'A',
+                  'responseCode': '00',
+                  'responseMessage': 'USUARIO CREADO',
+                  'userData': {'userId': 'abc123', 'email': 'ana@test.com'},
+                }),
+        );
+
+        final user = await r.register(
+          email: ' Ana@Test.com ',
+          firstName: ' Ana ',
+          firstLastName: 'Gómez',
+          password: 'clave123',
+        );
+
+        expect(requests.first.method, 'POST');
+        expect(
+          requests.first.url.toString(),
+          'http://api.test/api/User/ManageUser',
+        );
+        expect(sentBody(), {
+          'typeOperation': 'A',
+          'userData': {
+            'username': 'ana@test.com',
+            'email': 'ana@test.com',
+            'password': 'clave123',
+            'firstName': 'Ana',
+            'firstLastName': 'Gómez',
+            'secondName': '',
+            'secondLastName': '',
+          },
+        });
+        expect(requests[1].url.path, '/api/Auth/signin-password');
+        expect(sentBody(1), {
+          'username': 'ana@test.com',
+          'password': 'clave123',
+        });
+        expect(user.id, 'abc123');
+        expect(user.email, 'ana@test.com');
+        expect(user.fullName, 'Ana Gómez');
+        expect(store.session!.accessToken, 'jwt-pw');
+        expect(store.session!.user.fullName, 'Ana Gómez');
+      },
+    );
+
+    test(
+      'si el login automático falla, la cuenta igual queda creada',
+      () async {
+        final r = repo(
+          (req) => req.url.path == '/api/Auth/signin-password'
+              ? json({'responseCode': '96', 'message': 'X'}, 500)
+              : json({
+                  'responseCode': '00',
+                  'userData': {'userId': 'abc123'},
+                }),
+        );
+        final user = await r.register(
+          email: 'ana@test.com',
+          firstName: 'Ana',
+          firstLastName: 'Gómez',
+          password: 'clave123',
+        );
+        expect(user.id, 'abc123');
+        expect(store.session, isNull);
+      },
+    );
+
+    test('responseCode distinto de 00 con HTTP 200 es error', () async {
+      final r = repo(
+        (_) => json({
+          'responseCode': '10',
+          'responseMessage': 'EL CORREO YA SE ENCUENTRA REGISTRADO',
+        }),
+      );
+      expect(
+        () => r.register(
+          email: 'a@t.com',
+          firstName: 'A',
+          firstLastName: 'B',
+          password: 'clave123',
+        ),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            'El correo ya se encuentra registrado',
+          ),
+        ),
+      );
+    });
+
+    test('error 500 muestra mensaje genérico', () async {
+      final r = repo(
+        (_) => json({
+          'responseCode': '96',
+          'message': 'Error al procesar tu solicitud, contacta a soporte.',
+        }, 500),
+      );
+      expect(
+        () => r.register(
+          email: 'a@t.com',
+          firstName: 'A',
+          firstLastName: 'B',
+          password: 'clave123',
+        ),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            contains('error en el servidor'),
+          ),
+        ),
+      );
+    });
+
+    test('sin conexión da un mensaje claro', () async {
+      final r = repo((_) => throw http.ClientException('refused'));
+      expect(
+        () => r.register(
+          email: 'a@t.com',
+          firstName: 'A',
+          firstLastName: 'B',
+          password: 'clave123',
+        ),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            contains('No se pudo conectar'),
+          ),
+        ),
+      );
+    });
+    test('correo duplicado (código 26) se muestra en español', () async {
+      final r = repo(
+        (_) => json({
+          'responseCode': '26',
+          'message': 'USERNAME ALREADY EXISTS,EMAIL ALREADY EXISTS',
+        }, 400),
+      );
+      expect(
+        () => r.register(
+          email: 'a@t.com',
+          firstName: 'A',
+          firstLastName: 'B',
+          password: 'clave123',
+        ),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            'Ya existe una cuenta con ese correo.',
+          ),
+        ),
+      );
+    });
+  });
+
+  group('signIn (correo y contraseña)', () {
+    test('manda las credenciales y abre sesión', () async {
+      final r = repo((_) => json(loginOk()));
+      final user = await r.signIn(email: ' Ana@Test.com ', password: 'x1y2z3');
+
+      expect(requests.single.url.path, '/api/Auth/signin-password');
+      expect(requests.single.headers.containsKey('Authorization'), isFalse);
+      expect(sentBody(), {'username': 'ana@test.com', 'password': 'x1y2z3'});
+      expect(user.id, 'abc123');
+      // La API no devuelve el nombre: se muestra el correo.
+      expect(user.displayName, 'ana@test.com');
+      expect(store.session!.refreshToken, 'rt-pw');
+    });
+
+    test('credenciales inválidas (401) da mensaje claro', () async {
+      final r = repo(
+        (_) => json({
+          'responseCode': '05',
+          'message': 'CREDENCIALES INVALIDAS',
+        }, 401),
+      );
+      expect(
+        () => r.signIn(email: 'a@t.com', password: 'mala123'),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            'Correo o contraseña incorrectos',
+          ),
+        ),
+      );
+    });
+
+    test('demasiados intentos (429) avisa esperar', () async {
+      final r = repo((_) => http.Response('', 429));
+      expect(
+        () => r.signIn(email: 'a@t.com', password: 'clave123'),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            contains('Demasiados intentos'),
+          ),
+        ),
+      );
+    });
+  });
+
+  group('signInWithGoogle', () {
+    Map<String, dynamic> googleOk({
+      String? givenName = 'María José',
+      String? familyName = 'López',
+    }) => {
+      'typeOperation': 'A',
+      'responseCode': '00',
+      'responseMessage': 'OPERACION EXITOSA',
+      'userData': {
+        'userId': 'db-42',
+        'sub': '1098',
+        'email': 'maria@gmail.com',
+        'email_verified': true,
+        'name': 'María José López',
+        'picture': 'https://x/p.png',
+        'given_name': givenName,
+        'family_name': familyName,
+      },
+      'authenticationMethod': 'google',
+      'tokenData': {
+        'access_token': 'jwt-abc',
+        'refresh_token': 'rt-1',
+        'expires_in': 3600,
+        'token_type': 'Bearer',
+      },
+    };
+
+    test('manda el idToken y mapea el usuario de Google', () async {
+      final r = repo((_) => json(googleOk()));
+
+      final user = await r.signInWithGoogle();
+
+      expect(requests.single.url.path, '/api/GoogleAuth/signin-google');
+      expect(sentBody(), {
+        'typeOperation': 'A',
+        'googleData': {
+          'idToken': 'id-token-123',
+          'code': '',
+          'accessToken': '',
+          'refreshToken': '',
+        },
+      });
+      expect(user!.id, 'db-42');
+      expect(user.email, 'maria@gmail.com');
+      expect(user.firstName, 'María José');
+      expect(user.firstLastName, 'López');
+    });
+
+    test('sin given/family name parte el nombre completo', () async {
+      final r = repo((_) => json(googleOk(givenName: null, familyName: null)));
+      final user = await r.signInWithGoogle();
+      expect(user!.firstName, 'María');
+      expect(user.firstLastName, 'José López');
+    });
+
+    test('guarda la sesión, manda el token y al salir la revoca', () async {
+      final r = repo((_) => json(googleOk()));
+      await r.signInWithGoogle();
+      expect(store.session!.accessToken, 'jwt-abc');
+      expect(store.session!.refreshToken, 'rt-1');
+      expect(store.session!.user.email, 'maria@gmail.com');
+
+      await api.post('/api/otra', {});
+      expect(requests.last.headers['Authorization'], 'Bearer jwt-abc');
+
+      await r.signOut();
+      expect(store.session, isNull);
+      expect(requests.last.url.path, '/api/Session/logout');
+      expect(jsonDecode(requests.last.body), {'refreshToken': 'rt-1'});
+    });
+
+    test('login y registro no mandan Authorization', () async {
+      final r = repo((_) => json(googleOk()));
+      await r.signInWithGoogle();
+      expect(requests.single.headers.containsKey('Authorization'), isFalse);
+    });
+
+    test('respuesta sin refresh token es error', () async {
+      final r = repo(
+        (_) => json(googleOk()..['tokenData'] = {'access_token': 'jwt-abc'}),
+      );
+      expect(
+        r.signInWithGoogle,
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            ApiAuthRepository.googleErrorMessage,
+          ),
+        ),
+      );
+    });
+
+    test('si el usuario cancela no llama a la API', () async {
+      final r = repo((_) => json({}), googleToken: null);
+      expect(await r.signInWithGoogle(), isNull);
+      expect(requests, isEmpty);
+    });
+
+    test('token rechazado (401) da el mensaje genérico de Google', () async {
+      final r = repo(
+        (_) => json({
+          'responseCode': '05',
+          'message': 'ID_TOKEN DE GOOGLE INVALIDO O EXPIRADO',
+        }, 401),
+      );
+      expect(
+        r.signInWithGoogle,
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            ApiAuthRepository.googleErrorMessage,
+          ),
+        ),
+      );
+    });
+
+    test('falla del SDK de Google da el mensaje genérico', () async {
+      requests = [];
+      api = ApiClient(
+        baseUrl: 'http://api.test',
+        client: MockClient((_) async => http.Response('', 200)),
+      );
+      final r = ApiAuthRepository(
+        api: api,
+        session: SessionManager(api: api, store: MemorySessionStore()),
+        google: _ThrowingGoogle(),
+        pending: MockAuthRepository(),
+      );
+      expect(
+        r.signInWithGoogle,
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            ApiAuthRepository.googleErrorMessage,
+          ),
+        ),
+      );
+    });
+  });
+
+  test('splitFullName', () {
+    expect(ApiAuthRepository.splitFullName('Ana'), ('Ana', ''));
+    expect(ApiAuthRepository.splitFullName('  '), ('', ''));
+    expect(ApiAuthRepository.splitFullName('Juan Carlos Pérez'), (
+      'Juan',
+      'Carlos Pérez',
+    ));
+  });
+}

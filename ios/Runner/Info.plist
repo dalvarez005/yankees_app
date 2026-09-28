@@ -66,5 +66,28 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- Google Sign-In: cliente iOS, cliente Web (audiencia de la API) y
+	     URL scheme (client ID invertido) para volver a la app. -->
+	<key>GIDClientID</key>
+	<string>619026017478-lm9ffl7bhp8ohijfvluu9lam76j991bc.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>619026017478-6ceh6n1f42r6uqquia97305d9ic6c3a9.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.619026017478-lm9ffl7bhp8ohijfvluu9lam76j991bc</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Permite HTTP a localhost para la API de desarrollo. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

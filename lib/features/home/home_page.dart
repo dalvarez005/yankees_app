@@ -48,7 +48,7 @@ class HomePage extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                'Hola, ${user.fullName}',
+                'Hola, ${user.displayName}',
                 style: text.titleLarge,
                 textAlign: TextAlign.center,
               ),

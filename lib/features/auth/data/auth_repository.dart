@@ -1,3 +1,4 @@
+import 'api_auth_repository.dart';
 import 'app_user.dart';
 
 class AuthException implements Exception {
@@ -8,8 +9,8 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
-/// Contrato de autenticación. Cuando la API esté lista se crea otra
-/// implementación y se cambia en [AuthRepository.instance].
+/// Contrato de autenticación. La implementación real es
+/// [ApiAuthRepository]; se elige en main.dart.
 abstract class AuthRepository {
   static AuthRepository instance = MockAuthRepository();
 
@@ -24,11 +25,14 @@ abstract class AuthRepository {
     required String password,
   });
 
-  /// Inicia sesión o crea la cuenta con Google. En la implementación real:
-  /// obtener el idToken con el paquete google_sign_in y mandarlo a la API.
-  Future<AppUser> signInWithGoogle();
+  /// Inicia sesión o crea la cuenta con Google. Devuelve null si el
+  /// usuario cancela el selector de cuentas.
+  Future<AppUser?> signInWithGoogle();
 
   Future<void> sendPasswordReset(String email);
+
+  /// Al abrir la app: devuelve el usuario si hay una sesión guardada válida.
+  Future<AppUser?> restoreSession();
 
   Future<void> signOut();
 }
@@ -101,7 +105,7 @@ class MockAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<AppUser> signInWithGoogle() async {
+  Future<AppUser?> signInWithGoogle() async {
     await _latency();
     return const AppUser(
       id: 'g-1',
@@ -114,6 +118,9 @@ class MockAuthRepository implements AuthRepository {
 
   @override
   Future<void> sendPasswordReset(String email) => _latency();
+
+  @override
+  Future<AppUser?> restoreSession() async => null;
 
   @override
   Future<void> signOut() async {}
