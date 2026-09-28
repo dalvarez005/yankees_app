@@ -46,33 +46,30 @@ class ApiAuthRepository implements AuthRepository {
           'password': password,
           'firstName': firstName.trim(),
           'firstLastName': firstLastName.trim(),
-          // La API exige todos los campos string; vacío = no aplica.
-          'secondName': '',
-          'secondLastName': '',
         },
       }, authenticated: false),
     );
     _ensureSuccess(json, fallback: 'No se pudo crear la cuenta.');
 
-    // El registro no abre sesión: se entra con las mismas credenciales.
-    // Si ese paso falla la cuenta igual quedó creada; se sigue sin sesión
-    // y el usuario podrá entrar desde el login.
+    final data = json['userData'] as Map<String, dynamic>? ?? const {};
+    final user = AppUser(
+      id: data['userId']?.toString() ?? '',
+      email: data['email']?.toString() ?? normalizedEmail,
+      firstName: _nonEmpty(data['firstName']) ?? firstName.trim(),
+      firstLastName: _nonEmpty(data['firstLastName']) ?? firstLastName.trim(),
+      role: UserRole.parent,
+    );
+
+    // La API abre la sesión al registrar. Si no la devolviera, se entra con
+    // las mismas credenciales; si eso falla, la cuenta igual quedó creada.
+    if (json['tokenData'] is Map<String, dynamic>) {
+      await _startSession(user, json, fallback: 'No se pudo crear la cuenta.');
+      return user;
+    }
     try {
-      return await _passwordLogin(
-        normalizedEmail,
-        password,
-        firstName: firstName.trim(),
-        firstLastName: firstLastName.trim(),
-      );
+      return await _passwordLogin(normalizedEmail, password, known: user);
     } on AuthException {
-      final data = json['userData'] as Map<String, dynamic>? ?? const {};
-      return AppUser(
-        id: data['userId']?.toString() ?? '',
-        email: normalizedEmail,
-        firstName: firstName.trim(),
-        firstLastName: firstLastName.trim(),
-        role: UserRole.parent,
-      );
+      return user;
     }
   }
 
@@ -80,13 +77,10 @@ class ApiAuthRepository implements AuthRepository {
   Future<AppUser> signIn({required String email, required String password}) =>
       _passwordLogin(email.trim().toLowerCase(), password);
 
-  /// La API solo devuelve userId y tokens (no el nombre): si no se conoce,
-  /// la app muestra el correo hasta que exista un endpoint de perfil.
   Future<AppUser> _passwordLogin(
     String email,
     String password, {
-    String firstName = '',
-    String firstLastName = '',
+    AppUser? known,
   }) async {
     final Map<String, dynamic> json;
     try {
@@ -103,38 +97,57 @@ class ApiAuthRepository implements AuthRepository {
     }
     _ensureSuccess(json, fallback: 'No se pudo iniciar sesión.');
 
-    final user = AppUser(
-      id: json['userId']?.toString() ?? '',
-      email: email,
-      firstName: firstName,
-      firstLastName: firstLastName,
-      role: UserRole.parent,
-    );
-    await _startSession(
-      user,
-      accessToken: json['sessionToken'],
-      refreshToken: json['refreshToken'],
-      expiresIn: json['expiresIn'],
-      fallback: 'No se pudo iniciar sesión.',
-    );
-    return user;
+    final data = json['userData'] as Map<String, dynamic>? ?? const {};
+    final user =
+        known ??
+        AppUser(
+          id: data['userId']?.toString() ?? '',
+          email: data['email']?.toString() ?? email,
+          firstName: '',
+          firstLastName: '',
+          role: UserRole.parent,
+        );
+    await _startSession(user, json, fallback: 'No se pudo iniciar sesión.');
+
+    // El login no trae el nombre: se pide el perfil (ya con sesión).
+    return known ?? await _withProfile(user);
   }
 
+  /// Completa nombre y apellido con `GET /api/User/me`. Si falla, se sigue
+  /// con lo que se tiene (la app muestra el correo).
+  Future<AppUser> _withProfile(AppUser user) async {
+    try {
+      final json = await _api.get('/api/User/me');
+      final data = json['userData'] as Map<String, dynamic>? ?? const {};
+      final updated = AppUser(
+        id: _nonEmpty(data['userId']) ?? user.id,
+        email: _nonEmpty(data['email']) ?? user.email,
+        firstName: _nonEmpty(data['firstName']) ?? user.firstName,
+        firstLastName: _nonEmpty(data['firstLastName']) ?? user.firstLastName,
+        role: user.role,
+      );
+      await _session.updateUser(updated);
+      return updated;
+    } on ApiException {
+      return user;
+    }
+  }
+
+  /// Todas las respuestas de login traen la sesión en `tokenData`.
   Future<void> _startSession(
-    AppUser user, {
-    required Object? accessToken,
-    required Object? refreshToken,
-    required Object? expiresIn,
+    AppUser user,
+    Map<String, dynamic> json, {
     required String fallback,
   }) async {
-    final access = _nonEmpty(accessToken);
-    final refresh = _nonEmpty(refreshToken);
+    final tokens = json['tokenData'] as Map<String, dynamic>? ?? const {};
+    final access = _nonEmpty(tokens['accessToken']);
+    final refresh = _nonEmpty(tokens['refreshToken']);
     if (access == null || refresh == null) throw AuthException(fallback);
     await _session.start(
       user: user,
       accessToken: access,
       refreshToken: refresh,
-      expiresIn: (expiresIn as num?)?.toInt() ?? 0,
+      expiresIn: (tokens['expiresIn'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -159,13 +172,7 @@ class ApiAuthRepository implements AuthRepository {
     final json = await _call(
       () => _api.post('/api/GoogleAuth/signin-google', {
         'typeOperation': 'A',
-        'googleData': {
-          'idToken': idToken,
-          // No se usan en esta operación, pero la API los exige.
-          'code': '',
-          'accessToken': '',
-          'refreshToken': '',
-        },
+        'googleData': {'idToken': idToken},
       }, authenticated: false),
     );
     _ensureSuccess(json, fallback: googleErrorMessage);
@@ -181,17 +188,7 @@ class ApiAuthRepository implements AuthRepository {
       firstLastName: _nonEmpty(data['family_name']) ?? last,
       role: UserRole.parent,
     );
-    // Google devuelve la sesión dentro de tokenData (formato OAuth).
-    final tokens =
-        (json['tokenData'] ?? json['TokenData']) as Map<String, dynamic>? ??
-        const {};
-    await _startSession(
-      user,
-      accessToken: tokens['access_token'],
-      refreshToken: tokens['refresh_token'],
-      expiresIn: tokens['expires_in'],
-      fallback: googleErrorMessage,
-    );
+    await _startSession(user, json, fallback: googleErrorMessage);
     return user;
   }
 

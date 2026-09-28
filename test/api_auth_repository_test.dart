@@ -65,90 +65,121 @@ void main() {
   Map<String, dynamic> sentBody([int i = 0]) =>
       jsonDecode(requests[i].body) as Map<String, dynamic>;
 
-  Map<String, dynamic> loginOk() => {
-    'responseCode': '00',
-    'responseMessage': 'OPERACION EXITOSA',
-    'userId': 'abc123',
-    'authenticationMethod': 'password',
-    'sessionToken': 'jwt-pw',
-    'refreshToken': 'rt-pw',
+  Map<String, dynamic> tokens(String access, String refresh) => {
+    'accessToken': access,
+    'refreshToken': refresh,
     'expiresIn': 3600,
     'tokenType': 'Bearer',
   };
 
+  Map<String, dynamic> loginOk() => {
+    'responseCode': '00',
+    'responseMessage': 'OPERACION EXITOSA',
+    'userData': {
+      'userId': 'abc123',
+      'email': 'ana@test.com',
+      'authenticationMethod': 'password',
+    },
+    'tokenData': tokens('jwt-pw', 'rt-pw'),
+  };
+
+  Map<String, dynamic> profileOk() => {
+    'responseCode': '00',
+    'responseMessage': 'PERFIL OBTENIDO',
+    'userData': {
+      'userId': 'abc123',
+      'email': 'ana@test.com',
+      'firstName': 'Ana',
+      'firstLastName': 'Gómez',
+    },
+  };
+
   group('register', () {
-    test(
-      'envía ManageUser y luego entra con las mismas credenciales',
-      () async {
-        final r = repo(
-          (req) => req.url.path == '/api/Auth/signin-password'
-              ? json(loginOk())
-              : json({
-                  'typeOperation': 'A',
-                  'responseCode': '00',
-                  'responseMessage': 'USUARIO CREADO',
-                  'userData': {'userId': 'abc123', 'email': 'ana@test.com'},
-                }),
-        );
-
-        final user = await r.register(
-          email: ' Ana@Test.com ',
-          firstName: ' Ana ',
-          firstLastName: 'Gómez',
-          password: 'clave123',
-        );
-
-        expect(requests.first.method, 'POST');
-        expect(
-          requests.first.url.toString(),
-          'http://api.test/api/User/ManageUser',
-        );
-        expect(sentBody(), {
+    test('envía ManageUser y usa la sesión que devuelve', () async {
+      final r = repo(
+        (_) => json({
           'typeOperation': 'A',
+          'responseCode': '00',
+          'responseMessage': 'SUCCESS ADDED',
           'userData': {
-            'username': 'ana@test.com',
+            'userId': 'abc123',
             'email': 'ana@test.com',
-            'password': 'clave123',
             'firstName': 'Ana',
             'firstLastName': 'Gómez',
-            'secondName': '',
-            'secondLastName': '',
           },
-        });
-        expect(requests[1].url.path, '/api/Auth/signin-password');
-        expect(sentBody(1), {
-          'username': 'ana@test.com',
-          'password': 'clave123',
-        });
-        expect(user.id, 'abc123');
-        expect(user.email, 'ana@test.com');
-        expect(user.fullName, 'Ana Gómez');
-        expect(store.session!.accessToken, 'jwt-pw');
-        expect(store.session!.user.fullName, 'Ana Gómez');
-      },
-    );
+          'tokenData': tokens('jwt-reg', 'rt-reg'),
+        }),
+      );
 
-    test(
-      'si el login automático falla, la cuenta igual queda creada',
-      () async {
-        final r = repo(
-          (req) => req.url.path == '/api/Auth/signin-password'
-              ? json({'responseCode': '96', 'message': 'X'}, 500)
-              : json({
-                  'responseCode': '00',
-                  'userData': {'userId': 'abc123'},
-                }),
-        );
-        final user = await r.register(
-          email: 'ana@test.com',
-          firstName: 'Ana',
-          firstLastName: 'Gómez',
-          password: 'clave123',
-        );
-        expect(user.id, 'abc123');
-        expect(store.session, isNull);
-      },
-    );
+      final user = await r.register(
+        email: ' Ana@Test.com ',
+        firstName: ' Ana ',
+        firstLastName: 'Gómez',
+        password: 'clave123',
+      );
+
+      expect(requests.single.method, 'POST');
+      expect(
+        requests.single.url.toString(),
+        'http://api.test/api/User/ManageUser',
+      );
+      expect(sentBody(), {
+        'typeOperation': 'A',
+        'userData': {
+          'username': 'ana@test.com',
+          'email': 'ana@test.com',
+          'password': 'clave123',
+          'firstName': 'Ana',
+          'firstLastName': 'Gómez',
+        },
+      });
+      expect(user.id, 'abc123');
+      expect(user.fullName, 'Ana Gómez');
+      expect(store.session!.accessToken, 'jwt-reg');
+      expect(store.session!.refreshToken, 'rt-reg');
+    });
+
+    test('si el registro no trae sesión, entra con las credenciales', () async {
+      final r = repo(
+        (req) => req.url.path == '/api/Auth/signin-password'
+            ? json(loginOk())
+            : json({
+                'responseCode': '00',
+                'userData': {'userId': 'abc123'},
+              }),
+      );
+      final user = await r.register(
+        email: 'ana@test.com',
+        firstName: 'Ana',
+        firstLastName: 'Gómez',
+        password: 'clave123',
+      );
+      expect(requests.map((r) => r.url.path), [
+        '/api/User/ManageUser',
+        '/api/Auth/signin-password',
+      ]);
+      expect(user.fullName, 'Ana Gómez');
+      expect(store.session!.accessToken, 'jwt-pw');
+    });
+
+    test('si tampoco puede entrar, la cuenta igual queda creada', () async {
+      final r = repo(
+        (req) => req.url.path == '/api/Auth/signin-password'
+            ? json({'responseCode': '96', 'message': 'X'}, 500)
+            : json({
+                'responseCode': '00',
+                'userData': {'userId': 'abc123'},
+              }),
+      );
+      final user = await r.register(
+        email: 'ana@test.com',
+        firstName: 'Ana',
+        firstLastName: 'Gómez',
+        password: 'clave123',
+      );
+      expect(user.id, 'abc123');
+      expect(store.session, isNull);
+    });
 
     test('responseCode distinto de 00 con HTTP 200 es error', () async {
       final r = repo(
@@ -242,17 +273,35 @@ void main() {
   });
 
   group('signIn (correo y contraseña)', () {
-    test('manda las credenciales y abre sesión', () async {
-      final r = repo((_) => json(loginOk()));
+    test('abre sesión y completa el nombre con /api/User/me', () async {
+      final r = repo(
+        (req) => req.url.path == '/api/User/me'
+            ? json(profileOk())
+            : json(loginOk()),
+      );
       final user = await r.signIn(email: ' Ana@Test.com ', password: 'x1y2z3');
 
-      expect(requests.single.url.path, '/api/Auth/signin-password');
-      expect(requests.single.headers.containsKey('Authorization'), isFalse);
+      expect(requests.first.url.path, '/api/Auth/signin-password');
+      expect(requests.first.headers.containsKey('Authorization'), isFalse);
       expect(sentBody(), {'username': 'ana@test.com', 'password': 'x1y2z3'});
+      expect(requests.last.method, 'GET');
+      expect(requests.last.url.path, '/api/User/me');
+      expect(requests.last.headers['Authorization'], 'Bearer jwt-pw');
       expect(user.id, 'abc123');
-      // La API no devuelve el nombre: se muestra el correo.
-      expect(user.displayName, 'ana@test.com');
+      expect(user.displayName, 'Ana Gómez');
       expect(store.session!.refreshToken, 'rt-pw');
+      expect(store.session!.user.fullName, 'Ana Gómez');
+    });
+
+    test('si /me falla igual entra y muestra el correo', () async {
+      final r = repo(
+        (req) => req.url.path == '/api/User/me'
+            ? json({'responseCode': '96', 'message': 'X'}, 500)
+            : json(loginOk()),
+      );
+      final user = await r.signIn(email: 'ana@test.com', password: 'x1y2z3');
+      expect(user.displayName, 'ana@test.com');
+      expect(store.session, isNotNull);
     });
 
     test('credenciales inválidas (401) da mensaje claro', () async {
@@ -308,12 +357,7 @@ void main() {
         'family_name': familyName,
       },
       'authenticationMethod': 'google',
-      'tokenData': {
-        'access_token': 'jwt-abc',
-        'refresh_token': 'rt-1',
-        'expires_in': 3600,
-        'token_type': 'Bearer',
-      },
+      'tokenData': tokens('jwt-abc', 'rt-1'),
     };
 
     test('manda el idToken y mapea el usuario de Google', () async {
@@ -324,12 +368,7 @@ void main() {
       expect(requests.single.url.path, '/api/GoogleAuth/signin-google');
       expect(sentBody(), {
         'typeOperation': 'A',
-        'googleData': {
-          'idToken': 'id-token-123',
-          'code': '',
-          'accessToken': '',
-          'refreshToken': '',
-        },
+        'googleData': {'idToken': 'id-token-123'},
       });
       expect(user!.id, 'db-42');
       expect(user.email, 'maria@gmail.com');
@@ -368,7 +407,7 @@ void main() {
 
     test('respuesta sin refresh token es error', () async {
       final r = repo(
-        (_) => json(googleOk()..['tokenData'] = {'access_token': 'jwt-abc'}),
+        (_) => json(googleOk()..['tokenData'] = {'accessToken': 'jwt-abc'}),
       );
       expect(
         r.signInWithGoogle,

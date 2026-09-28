@@ -49,15 +49,25 @@ class ApiClient {
     String path,
     Map<String, dynamic> body, {
     bool authenticated = true,
+  }) => _request('POST', path, body: body, authenticated: authenticated);
+
+  Future<Map<String, dynamic>> get(String path, {bool authenticated = true}) =>
+      _request('GET', path, authenticated: authenticated);
+
+  Future<Map<String, dynamic>> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    required bool authenticated,
   }) async {
     final auth = authenticated ? authenticator : null;
     final token = await auth?.accessToken();
-    var response = await _send(path, body, token);
+    var response = await _send(method, path, body, token);
 
     // Token vencido o revocado: se renueva una vez y se reintenta.
     if (response.statusCode == 401 && token != null && auth != null) {
       final renewed = await auth.refreshAccessToken();
-      if (renewed != null) response = await _send(path, body, renewed);
+      if (renewed != null) response = await _send(method, path, body, renewed);
     }
 
     final json = _decode(response.body);
@@ -66,7 +76,9 @@ class ApiClient {
     }
     final code = json?['responseCode']?.toString();
     if (kDebugMode) {
-      debugPrint('API $path → ${response.statusCode}: ${response.body}');
+      debugPrint(
+        'API $method $path → ${response.statusCode}: ${response.body}',
+      );
     }
     throw ApiException(
       response.statusCode == 429
@@ -78,21 +90,21 @@ class ApiClient {
   }
 
   Future<http.Response> _send(
+    String method,
     String path,
-    Map<String, dynamic> body,
+    Map<String, dynamic>? body,
     String? token,
   ) async {
+    final uri = Uri.parse('$baseUrl$path');
+    final headers = {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
     try {
-      return await _client
-          .post(
-            Uri.parse('$baseUrl$path'),
-            headers: {
-              'Content-Type': 'application/json',
-              if (token != null) 'Authorization': 'Bearer $token',
-            },
-            body: jsonEncode(body),
-          )
-          .timeout(_timeout);
+      final request = method == 'GET'
+          ? _client.get(uri, headers: headers)
+          : _client.post(uri, headers: headers, body: jsonEncode(body));
+      return await request.timeout(_timeout);
     } on TimeoutException {
       throw const ApiException(
         'El servidor tardó demasiado en responder. Intenta de nuevo.',

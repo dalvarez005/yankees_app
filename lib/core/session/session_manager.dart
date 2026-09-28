@@ -46,6 +46,20 @@ class SessionManager implements Authenticator {
     await _store.write(_session!);
   }
 
+  /// Actualiza los datos del usuario de la sesión (p. ej. tras pedir el
+  /// perfil) sin tocar los tokens.
+  Future<void> updateUser(AppUser user) async {
+    final session = _session;
+    if (session == null) return;
+    _session = StoredSession(
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      expiresAt: session.expiresAt,
+      user: user,
+    );
+    await _store.write(_session!);
+  }
+
   /// Al abrir la app: recupera la sesión guardada y la renueva si venció.
   /// Sin conexión se mantiene la sesión (se renovará en el próximo request).
   Future<AppUser?> restore() async {
@@ -80,8 +94,9 @@ class SessionManager implements Authenticator {
       final json = await _api.post('/api/Session/refresh-token', {
         'refreshToken': session.refreshToken,
       }, authenticated: false);
-      final access = json['sessionToken']?.toString();
-      final refresh = json['refreshToken']?.toString();
+      final tokens = json['tokenData'] as Map<String, dynamic>? ?? const {};
+      final access = tokens['accessToken']?.toString();
+      final refresh = tokens['refreshToken']?.toString();
       if (json['responseCode'] != '00' || access == null || refresh == null) {
         throw const ApiException('Respuesta inválida', statusCode: 401);
       }
@@ -89,7 +104,7 @@ class SessionManager implements Authenticator {
         accessToken: access,
         refreshToken: refresh,
         expiresAt: _now().add(
-          Duration(seconds: (json['expiresIn'] as num?)?.toInt() ?? 0),
+          Duration(seconds: (tokens['expiresIn'] as num?)?.toInt() ?? 0),
         ),
       );
       await _store.write(_session!);

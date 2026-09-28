@@ -42,9 +42,13 @@ void main() {
         return http.Response(
           jsonEncode({
             'responseCode': '00',
-            'sessionToken': currentAccess,
-            'refreshToken': 'rt-${refreshCount + 1}',
-            'expiresIn': 60,
+            'userData': {'userId': 'u1', 'email': 'ana@test.com'},
+            'tokenData': {
+              'accessToken': currentAccess,
+              'refreshToken': 'rt-${refreshCount + 1}',
+              'expiresIn': 60,
+              'tokenType': 'Bearer',
+            },
           }),
           200,
         );

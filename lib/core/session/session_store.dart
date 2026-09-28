@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../features/auth/data/app_user.dart';
@@ -71,8 +72,9 @@ class SecureSessionStore implements SessionStore {
       final raw = await _storage.read(key: _key);
       if (raw == null) return null;
       return StoredSession.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    } catch (_) {
+    } catch (e) {
       // Dato corrupto o ilegible (p. ej. tras reinstalar): se descarta.
+      if (kDebugMode) debugPrint('Sesión guardada ilegible, se descarta: $e');
       await clear();
       return null;
     }
