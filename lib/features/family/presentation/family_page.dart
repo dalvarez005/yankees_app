@@ -3,15 +3,19 @@ import 'package:flutter/material.dart';
 import '../../../app/app_colors.dart';
 import '../../auth/data/app_user.dart';
 import '../../profile/presentation/profile_page.dart';
+import '../../categories/data/category_repository.dart';
 import '../data/dependent.dart';
 import '../data/dependent_repository.dart';
 import 'dependent_form_page.dart';
 
 /// Inicio del padre/madre/tutor: sus hijos registrados.
 class FamilyPage extends StatefulWidget {
-  const FamilyPage({super.key, required this.user});
+  const FamilyPage({super.key, required this.user, this.embedded = false});
 
   final AppUser user;
+
+  /// Abierta desde el panel de administración: botón atrás en vez del perfil.
+  final bool embedded;
 
   @override
   State<FamilyPage> createState() => _FamilyPageState();
@@ -20,6 +24,7 @@ class FamilyPage extends StatefulWidget {
 class _FamilyPageState extends State<FamilyPage> {
   late AppUser _user = widget.user;
   List<Dependent>? _dependents;
+  List<Category> _categories = const [];
   String? _error;
 
   @override
@@ -31,17 +36,54 @@ class _FamilyPageState extends State<FamilyPage> {
   Future<void> _load() async {
     setState(() => _error = null);
     try {
+      // En paralelo, pero esperando cada uno para conservar el tipo de error.
+      final categoriesFuture = _loadCategories();
       final items = await DependentRepository.instance.list();
-      if (mounted) setState(() => _dependents = items);
+      final categories = await categoriesFuture;
+      if (mounted) {
+        setState(() {
+          _dependents = [
+            for (final d in items) _resolveCategory(d, categories),
+          ];
+          _categories = categories;
+        });
+      }
     } on DependentException catch (e) {
       if (mounted) setState(() => _error = e.message);
     }
   }
 
+  /// Si falla, se siguen mostrando los hijos (sin nombre de categoría).
+  Future<List<Category>> _loadCategories() async {
+    try {
+      return await CategoryRepository.instance.list();
+    } on CategoryException {
+      return _categories;
+    }
+  }
+
+  /// La lista de la API trae el nombre de la categoría pero no su id, que
+  /// el formulario necesita para editar.
+  static Dependent _resolveCategory(Dependent d, List<Category> categories) {
+    if (d.categoryId != 0 || d.categoryName == null) return d;
+    final name = d.categoryName!.toLowerCase();
+    final match = categories.where((c) => c.name.toLowerCase() == name);
+    return match.isEmpty ? d : d.withCategoryId(match.first.id);
+  }
+
+  String _categoryName(Dependent d) =>
+      d.categoryName ??
+      _categories
+          .where((c) => c.id == d.categoryId)
+          .map((c) => c.name)
+          .firstOrNull ??
+      'Sin categoría';
+
   Future<void> _openForm([Dependent? dependent]) async {
     final saved = await Navigator.of(context).push<Dependent>(
       MaterialPageRoute(
-        builder: (_) => DependentFormPage(dependent: dependent),
+        builder: (_) =>
+            DependentFormPage(dependent: dependent, categories: _categories),
       ),
     );
     if (saved == null || !mounted) return;
@@ -113,29 +155,37 @@ class _FamilyPageState extends State<FamilyPage> {
         backgroundColor: AppColors.navy,
         foregroundColor: Colors.white,
         title: const Text('Mi familia'),
+        leading: widget.embedded
+            ? IconButton(
+                tooltip: 'Atrás',
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => Navigator.of(context).maybePop(),
+              )
+            : null,
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Tooltip(
-              message: 'Mi perfil',
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: _openProfile,
-                child: CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Colors.white,
-                  foregroundColor: AppColors.navy,
-                  child: Text(
-                    _user.initials,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+          if (!widget.embedded)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Tooltip(
+                message: 'Mi perfil',
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: _openProfile,
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppColors.navy,
+                    child: Text(
+                      _user.initials,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
         ],
       ),
       floatingActionButton: (dependents?.isNotEmpty ?? false)
@@ -204,6 +254,7 @@ class _FamilyPageState extends State<FamilyPage> {
           for (final d in dependents)
             _DependentCard(
               dependent: d,
+              categoryName: _categoryName(d),
               onEdit: () => _openForm(d),
               onRemove: () => _confirmRemove(d),
             ),
@@ -215,11 +266,13 @@ class _FamilyPageState extends State<FamilyPage> {
 class _DependentCard extends StatelessWidget {
   const _DependentCard({
     required this.dependent,
+    required this.categoryName,
     required this.onEdit,
     required this.onRemove,
   });
 
   final Dependent dependent;
+  final String categoryName;
   final VoidCallback onEdit;
   final VoidCallback onRemove;
 
@@ -270,7 +323,7 @@ class _DependentCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    _Chip(categoryName(dependent.categoryId)),
+                    _Chip(categoryName),
                   ],
                 ),
               ),

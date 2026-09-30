@@ -57,14 +57,13 @@ class ApiAuthRepository implements AuthRepository {
       email: data['email']?.toString() ?? normalizedEmail,
       firstName: _nonEmpty(data['firstName']) ?? firstName.trim(),
       firstLastName: _nonEmpty(data['firstLastName']) ?? firstLastName.trim(),
-      role: UserRole.parent,
     );
 
     // La API abre la sesión al registrar. Si no la devolviera, se entra con
     // las mismas credenciales; si eso falla, la cuenta igual quedó creada.
     if (json['tokenData'] is Map<String, dynamic>) {
       await _startSession(user, json, fallback: 'No se pudo crear la cuenta.');
-      return user;
+      return _withProfile(user);
     }
     try {
       return await _passwordLogin(normalizedEmail, password, known: user);
@@ -105,12 +104,11 @@ class ApiAuthRepository implements AuthRepository {
           email: data['email']?.toString() ?? email,
           firstName: '',
           firstLastName: '',
-          role: UserRole.parent,
         );
     await _startSession(user, json, fallback: 'No se pudo iniciar sesión.');
 
     // El login no trae el nombre: se pide el perfil (ya con sesión).
-    return known ?? await _withProfile(user);
+    return _withProfile(known ?? user);
   }
 
   /// Completa nombre y apellido con el perfil. Si falla, se sigue con lo
@@ -129,6 +127,7 @@ class ApiAuthRepository implements AuthRepository {
     final json = await _call(() => _api.get('/api/User/me'));
     _ensureSuccess(json, fallback: 'No se pudo cargar tu perfil.');
     final data = json['userData'] as Map<String, dynamic>? ?? const {};
+    final access = json['access'] as Map<String, dynamic>? ?? const {};
     final user = AppUser(
       id: _nonEmpty(data['userId']) ?? current?.id ?? '',
       email: _nonEmpty(data['email']) ?? current?.email ?? '',
@@ -137,7 +136,10 @@ class ApiAuthRepository implements AuthRepository {
       firstLastName:
           _nonEmpty(data['firstLastName']) ?? current?.firstLastName ?? '',
       secondLastName: _nonEmpty(data['secondLastName']),
-      role: current?.role ?? UserRole.parent,
+      roleName: access['roleName']?.toString() ?? current?.roleName ?? '',
+      permissions: {
+        ...?(access['permissions'] as List?)?.map((p) => p.toString()),
+      },
     );
     await _session.updateUser(user);
     return user;
@@ -222,10 +224,9 @@ class ApiAuthRepository implements AuthRepository {
       email: data['email']?.toString() ?? '',
       firstName: _nonEmpty(data['given_name']) ?? first,
       firstLastName: _nonEmpty(data['family_name']) ?? last,
-      role: UserRole.parent,
     );
     await _startSession(user, json, fallback: googleErrorMessage);
-    return user;
+    return _withProfile(user);
   }
 
   static String? _nonEmpty(Object? value) {

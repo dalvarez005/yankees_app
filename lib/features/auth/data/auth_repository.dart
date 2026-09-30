@@ -1,4 +1,5 @@
 import 'api_auth_repository.dart';
+import '../../../core/access/permissions.dart';
 import 'app_user.dart';
 
 class AuthException implements Exception {
@@ -69,7 +70,8 @@ class MockAuthRepository implements AuthRepository {
         email: 'admin@yankees.com',
         firstName: 'Administración',
         firstLastName: 'Yankees',
-        role: UserRole.admin,
+        roleName: 'SUPER_ADMIN',
+        permissions: {...Permissions.admin, Permissions.ownDependents},
       ),
       password: 'admin123',
     ),
@@ -79,7 +81,8 @@ class MockAuthRepository implements AuthRepository {
         email: 'padre@yankees.com',
         firstName: 'Carlos',
         firstLastName: 'Pérez',
-        role: UserRole.parent,
+        roleName: 'USER_BASE',
+        permissions: {Permissions.ownDependents},
       ),
       password: 'padre123',
     ),
@@ -120,7 +123,8 @@ class MockAuthRepository implements AuthRepository {
       email: key,
       firstName: firstName.trim(),
       firstLastName: firstLastName.trim(),
-      role: UserRole.parent,
+      roleName: 'USER_BASE',
+      permissions: const {Permissions.ownDependents},
     );
     _users[key] = (user: user, password: password);
     return _current = user;
@@ -134,7 +138,8 @@ class MockAuthRepository implements AuthRepository {
       email: 'maria.lopez@gmail.com',
       firstName: 'María',
       firstLastName: 'López',
-      role: UserRole.parent,
+      roleName: 'USER_BASE',
+      permissions: {Permissions.ownDependents},
     );
   }
 
@@ -160,7 +165,8 @@ class MockAuthRepository implements AuthRepository {
     return _current = AppUser(
       id: user.id,
       email: user.email,
-      role: user.role,
+      roleName: user.roleName,
+      permissions: user.permissions,
       firstName: input.firstName,
       secondName: input.secondName,
       firstLastName: input.firstLastName,

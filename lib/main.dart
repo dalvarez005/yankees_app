@@ -15,7 +15,10 @@ import 'features/auth/presentation/login_page.dart';
 import 'features/auth/presentation/register_page.dart';
 import 'features/family/data/dependent_repository.dart';
 import 'features/family/presentation/family_page.dart';
-import 'features/home/home_page.dart';
+import 'core/access/permissions.dart';
+import 'features/admin/data/admin_repository.dart';
+import 'features/admin/presentation/admin_home_page.dart';
+import 'features/categories/data/category_repository.dart';
 import 'features/profile/data/profile_review_store.dart';
 import 'features/profile/presentation/confirm_profile_page.dart';
 
@@ -38,11 +41,21 @@ Future<void> main() async {
       pending: MockAuthRepository(),
     );
     DependentRepository.instance = ApiDependentRepository(api);
+    CategoryRepository.instance = ApiCategoryRepository(api);
+    AdminRepository.instance = ApiAdminRepository(api);
   }
 
   // Si quedó una sesión guardada, se entra directo sin pedir login (salvo
   // que falte confirmar los datos del perfil).
-  final user = await AuthRepository.instance.restoreSession();
+  var user = await AuthRepository.instance.restoreSession();
+  if (user != null) {
+    // Rol y permisos actuales: un admin pudo cambiarlos desde la última vez.
+    try {
+      user = await AuthRepository.instance.fetchProfile();
+    } on AuthException {
+      // Sin conexión se usan los guardados en la sesión.
+    }
+  }
   final review =
       user != null && await ProfileReviewStore.instance.needsReview(user);
   runApp(YankeesApp(initialUser: user, reviewProfile: review));
@@ -108,7 +121,14 @@ class YankeesApp extends StatelessWidget {
     return MaterialPageRoute(builder: (_) => page, settings: settings);
   }
 
-  /// Padres/tutores ven su familia; el panel de admin aún es provisional.
+  /// Con permisos de administración: panel de admin (sus secciones dependen
+  /// de cada permiso). Solo con "gestionar mis hijos": Mi familia.
+  ///
+  /// Si la API no informa permisos (versión sin roles/permisos en `/me`),
+  /// se usa Mi familia, que es la experiencia base de todo usuario.
   static Widget _homeFor(AppUser user) =>
-      user.isAdmin ? HomePage(user: user) : FamilyPage(user: user);
+      user.permissions.isEmpty ||
+          (!user.isAdmin && user.can(Permissions.ownDependents))
+      ? FamilyPage(user: user)
+      : AdminHomePage(user: user);
 }

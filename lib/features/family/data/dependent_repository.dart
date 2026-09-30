@@ -28,7 +28,11 @@ class ApiDependentRepository implements DependentRepository {
 
   @override
   Future<List<Dependent>> list() async {
-    final json = await _call(() => _api.get('/api/Dependent'));
+    final json = await _call(
+      () => _api.get(
+        '/api/Dependent/GetDependentDataForUser?page=1&pageSize=100',
+      ),
+    );
     final items = json['dependentData'] as List<dynamic>? ?? const [];
     return items
         .whereType<Map<String, dynamic>>()

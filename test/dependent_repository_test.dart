@@ -49,7 +49,7 @@ void main() {
     'status': 'A',
   };
 
-  test('list hace GET /api/Dependent y mapea los hijos', () async {
+  test('list hace GET GetDependentDataForUser y mapea los hijos', () async {
     final r = repo(
       (_) => json({
         'responseCode': '00',
@@ -59,7 +59,7 @@ void main() {
     final items = await r.list();
 
     expect(requests.single.method, 'GET');
-    expect(requests.single.url.path, '/api/Dependent');
+    expect(requests.single.url.path, '/api/Dependent/GetDependentDataForUser');
     expect(items.single.fullName, 'Sofía Castro');
     expect(items.single.formattedCui, '1234 56789 0101');
     expect(items.single.categoryId, 2);

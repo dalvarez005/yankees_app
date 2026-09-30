@@ -118,9 +118,9 @@ void main() {
         password: 'clave123',
       );
 
-      expect(requests.single.method, 'POST');
+      expect(requests.first.method, 'POST');
       expect(
-        requests.single.url.toString(),
+        requests.first.url.toString(),
         'http://api.test/api/User/ManageUser',
       );
       expect(sentBody(), {
@@ -136,6 +136,8 @@ void main() {
       expect(user.id, 'abc123');
       expect(user.fullName, 'Ana Gómez');
       expect(store.session!.accessToken, 'jwt-reg');
+      // Después pide /me para traer rol y permisos.
+      expect(requests.last.url.path, '/api/User/me');
       expect(store.session!.refreshToken, 'rt-reg');
     });
 
@@ -157,6 +159,7 @@ void main() {
       expect(requests.map((r) => r.url.path), [
         '/api/User/ManageUser',
         '/api/Auth/signin-password',
+        '/api/User/me',
       ]);
       expect(user.fullName, 'Ana Gómez');
       expect(store.session!.accessToken, 'jwt-pw');
@@ -431,7 +434,7 @@ void main() {
 
       final user = await r.signInWithGoogle();
 
-      expect(requests.single.url.path, '/api/GoogleAuth/signin-google');
+      expect(requests.first.url.path, '/api/GoogleAuth/signin-google');
       expect(sentBody(), {
         'typeOperation': 'A',
         'googleData': {'idToken': 'id-token-123'},
@@ -468,7 +471,7 @@ void main() {
     test('login y registro no mandan Authorization', () async {
       final r = repo((_) => json(googleOk()));
       await r.signInWithGoogle();
-      expect(requests.single.headers.containsKey('Authorization'), isFalse);
+      expect(requests.first.headers.containsKey('Authorization'), isFalse);
     });
 
     test('respuesta sin refresh token es error', () async {

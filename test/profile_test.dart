@@ -12,7 +12,6 @@ const _googleJoker = AppUser(
   email: 'joker12@gmail.com',
   firstName: 'Joker',
   firstLastName: 'GOOGLE',
-  role: UserRole.parent,
 );
 
 const _real = AppUser(
@@ -20,7 +19,6 @@ const _real = AppUser(
   email: 'ana@test.com',
   firstName: 'Ana',
   firstLastName: 'Gómez',
-  role: UserRole.parent,
 );
 
 /// Repositorio que devuelve un perfil fijo y registra lo guardado.
@@ -38,7 +36,8 @@ class _FakeAuth extends MockAuthRepository {
     return profile = AppUser(
       id: profile.id,
       email: profile.email,
-      role: profile.role,
+      roleName: profile.roleName,
+      permissions: profile.permissions,
       firstName: input.firstName,
       secondName: input.secondName,
       firstLastName: input.firstLastName,
@@ -58,7 +57,6 @@ void main() {
             email: 'a@b.com',
             firstName: 'a@b.com',
             firstLastName: 'Pérez',
-            role: UserRole.parent,
           ),
         ),
         isTrue,

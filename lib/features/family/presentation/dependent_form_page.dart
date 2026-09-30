@@ -5,12 +5,21 @@ import '../../../app/app_colors.dart';
 import '../../auth/presentation/validators.dart';
 import '../../auth/presentation/widgets/auth_field.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
+import '../../categories/data/category_repository.dart';
 import '../data/dependent.dart';
 import '../data/dependent_repository.dart';
 
 /// Alta o edición de un hijo. Devuelve el [Dependent] guardado al cerrar.
 class DependentFormPage extends StatefulWidget {
-  const DependentFormPage({super.key, this.dependent});
+  const DependentFormPage({
+    super.key,
+    this.dependent,
+    required this.categories,
+  });
+
+  /// Catálogo completo; se ofrecen las activas y, al editar, también la
+  /// actual aunque esté inactiva.
+  final List<Category> categories;
 
   /// null = agregar; con valor = editar.
   final Dependent? dependent;
@@ -166,6 +175,11 @@ class _DependentFormPageState extends State<DependentFormPage> {
                     ),
                     gap,
                     _CategoryField(
+                      categories: [
+                        for (final c in widget.categories)
+                          if (c.active || c.id == widget.dependent?.categoryId)
+                            c,
+                      ],
                       value: _categoryId,
                       onChanged: (v) => setState(() => _categoryId = v),
                     ),
@@ -187,7 +201,13 @@ class _DependentFormPageState extends State<DependentFormPage> {
 }
 
 class _CategoryField extends StatelessWidget {
-  const _CategoryField({required this.value, required this.onChanged});
+  const _CategoryField({
+    required this.categories,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final List<Category> categories;
 
   final int? value;
   final ValueChanged<int?> onChanged;
@@ -214,7 +234,10 @@ class _CategoryField extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           items: [
             for (final c in categories)
-              DropdownMenuItem(value: c.id, child: Text(c.name)),
+              DropdownMenuItem(
+                value: c.id,
+                child: Text(c.active ? c.name : '${c.name} (inactiva)'),
+              ),
           ],
         ),
       ],

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:yankees/app/app_theme.dart';
 import 'package:yankees/features/auth/data/app_user.dart';
+import 'package:yankees/features/categories/data/category_repository.dart';
 import 'package:yankees/features/family/data/dependent.dart';
 import 'package:yankees/features/family/data/dependent_repository.dart';
 import 'package:yankees/features/family/presentation/family_page.dart';
@@ -12,7 +13,8 @@ const _user = AppUser(
   email: 'ana@test.com',
   firstName: 'Ana',
   firstLastName: 'Gómez',
-  role: UserRole.parent,
+  roleName: 'USER_BASE',
+  permissions: {'hijos.gestionar_propios'},
 );
 
 Widget _app() => MaterialApp(
@@ -24,6 +26,9 @@ void main() {
   setUp(() {
     GoogleFonts.config.allowRuntimeFetching = false;
     DependentRepository.instance = MockDependentRepository(
+      latency: Duration.zero,
+    );
+    CategoryRepository.instance = MockCategoryRepository(
       latency: Duration.zero,
     );
   });
@@ -53,8 +58,26 @@ void main() {
 
     expect(find.text('Sofía Castro'), findsOneWidget);
     expect(find.text('CUI 1234 56789 0101'), findsOneWidget);
-    expect(find.text(categoryName(2)), findsOneWidget);
+    // La categoría viene del catálogo (id 2 = Preinfantil en el mock).
+    expect(find.text('Preinfantil'), findsOneWidget);
     expect(find.text('Tienes 1 hijo registrado.'), findsOneWidget);
+  });
+
+  testWidgets('el formulario ofrece solo categorías activas', (tester) async {
+    await tester.runAsync(
+      () => CategoryRepository.instance.deactivate(1), // Moscos
+    );
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Agregar hijo'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Selecciona'));
+    await tester.tap(find.text('Selecciona'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Infantil'), findsWidgets);
+    expect(find.text('Moscos'), findsNothing);
   });
 
   testWidgets('el formulario valida CUI, nombre, apellido y categoría', (

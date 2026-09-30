@@ -1,4 +1,4 @@
-enum UserRole { admin, parent }
+import '../../../core/access/permissions.dart';
 
 class AppUser {
   const AppUser({
@@ -6,7 +6,8 @@ class AppUser {
     required this.email,
     required this.firstName,
     required this.firstLastName,
-    required this.role,
+    this.roleName = '',
+    this.permissions = const {},
     this.secondName,
     this.secondLastName,
   });
@@ -17,7 +18,10 @@ class AppUser {
   final String? secondName;
   final String firstLastName;
   final String? secondLastName;
-  final UserRole role;
+
+  /// Rol y permisos vienen de `GET /api/User/me` (campo `access`).
+  final String roleName;
+  final Set<String> permissions;
 
   /// Nombre corto para saludos: primer nombre y primer apellido.
   String get fullName => '$firstName $firstLastName'.trim();
@@ -42,7 +46,25 @@ class AppUser {
     return email.isEmpty ? '?' : email[0].toUpperCase();
   }
 
-  bool get isAdmin => role == UserRole.admin;
+  bool can(String permission) => permissions.contains(permission);
+
+  /// Entra al panel de administración (tiene algún permiso de admin).
+  bool get isAdmin => permissions.any(Permissions.admin.contains);
+
+  /// Mismo usuario con otro rol/permisos (tras releer el perfil).
+  AppUser withAccess({
+    required String roleName,
+    required Set<String> permissions,
+  }) => AppUser(
+    id: id,
+    email: email,
+    firstName: firstName,
+    secondName: secondName,
+    firstLastName: firstLastName,
+    secondLastName: secondLastName,
+    roleName: roleName,
+    permissions: permissions,
+  );
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -51,7 +73,8 @@ class AppUser {
     'secondName': secondName,
     'firstLastName': firstLastName,
     'secondLastName': secondLastName,
-    'role': role.name,
+    'roleName': roleName,
+    'permissions': permissions.toList(),
   };
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
@@ -61,6 +84,7 @@ class AppUser {
     secondName: json['secondName'] as String?,
     firstLastName: json['firstLastName'] as String? ?? '',
     secondLastName: json['secondLastName'] as String?,
-    role: UserRole.values.asNameMap()[json['role']] ?? UserRole.parent,
+    roleName: json['roleName'] as String? ?? '',
+    permissions: {...?(json['permissions'] as List?)?.cast<String>()},
   );
 }

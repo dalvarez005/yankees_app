@@ -152,6 +152,27 @@ class ApiClient {
     'CUI YA ASOCIADO A UN DEPENDIENTE ACTIVO': 'Ese CUI ya está registrado.',
     'DEPENDENT NOT FOUND': 'No se encontró el registro. Actualiza la lista.',
     'NO FIELDS TO UPDATE': 'No hay cambios para guardar.',
+    'NO TIENE PERMISO PARA ESTA ACCION': 'No tienes permiso para esta acción.',
+    'NOMBRE YA EXISTE': 'Ya existe uno con ese nombre.',
+    'REGISTRO NO EXISTE O ESTA INACTIVO':
+        'Ya no está disponible. Actualiza la lista.',
+    'REGISTRO TIENE ASOCIACIONES':
+        'No se puede desactivar: todavía está en uso.',
+    'ROL DEL SISTEMA PROTEGIDO': 'Los roles del sistema no se modifican.',
+    'NO PUEDE CAMBIAR LOS PERMISOS DE SU PROPIO ROL':
+        'No puedes cambiar los permisos de tu propio rol.',
+    'NO PUEDE OTORGAR PERMISOS QUE NO TIENE':
+        'Solo puedes otorgar permisos que tú tienes.',
+    'PERMISO NO EXISTE': 'Uno de los permisos ya no existe. Recarga.',
+    'CAMBIO DE ROL NO AUTORIZADO': 'No tienes permiso para asignar ese rol.',
+    'NO PUEDE MODIFICAR A OTRO SUPER_ADMIN':
+        'Un super admin no se modifica desde la app.',
+    'NO PUEDE CAMBIAR SU PROPIO ACCESO':
+        'No puedes cambiar tu propio rol ni desactivarte.',
+    'USUARIO NO EXISTE': 'No se encontró el usuario. Actualiza la lista.',
+    'USUARIO NO EXISTE O ESTA INACTIVO':
+        'El usuario no existe o está inactivo.',
+    'ROL NO EXISTE O ESTA INACTIVO': 'Ese rol ya no está disponible.',
   };
 
   /// Traduce los mensajes conocidos (pueden venir varios separados por

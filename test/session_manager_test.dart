@@ -13,7 +13,6 @@ const _user = AppUser(
   email: 'ana@test.com',
   firstName: 'Ana',
   firstLastName: 'Gómez',
-  role: UserRole.parent,
 );
 
 void main() {

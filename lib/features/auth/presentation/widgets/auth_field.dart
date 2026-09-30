@@ -19,6 +19,7 @@ class AuthField extends StatefulWidget {
     this.onSubmitted,
     this.textCapitalization = TextCapitalization.none,
     this.inputFormatters,
+    this.enabled = true,
   });
 
   final String label;
@@ -33,6 +34,7 @@ class AuthField extends StatefulWidget {
   final ValueChanged<String>? onSubmitted;
   final TextCapitalization textCapitalization;
   final List<TextInputFormatter>? inputFormatters;
+  final bool enabled;
 
   @override
   State<AuthField> createState() => _AuthFieldState();
@@ -62,6 +64,7 @@ class _AuthFieldState extends State<AuthField> {
           onFieldSubmitted: widget.onSubmitted,
           textCapitalization: widget.textCapitalization,
           inputFormatters: widget.inputFormatters,
+          enabled: widget.enabled,
           autovalidateMode: AutovalidateMode.onUserInteraction,
           decoration: InputDecoration(
             hintText: widget.hint,

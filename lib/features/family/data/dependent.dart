@@ -6,6 +6,7 @@ class Dependent {
     required this.firstName,
     required this.firstLastName,
     required this.categoryId,
+    this.categoryName,
     this.secondName,
     this.secondLastName,
   });
@@ -19,6 +20,9 @@ class Dependent {
   final String firstLastName;
   final String? secondLastName;
   final int categoryId;
+
+  /// Nombre que manda la API al listar (en la lista no viene el id).
+  final String? categoryName;
 
   String get fullName => [
     firstName,
@@ -37,6 +41,17 @@ class Dependent {
       ? '${cui.substring(0, 4)} ${cui.substring(4, 9)} ${cui.substring(9)}'
       : cui;
 
+  Dependent withCategoryId(int id) => Dependent(
+    id: this.id,
+    cui: cui,
+    firstName: firstName,
+    secondName: secondName,
+    firstLastName: firstLastName,
+    secondLastName: secondLastName,
+    categoryId: id,
+    categoryName: categoryName,
+  );
+
   factory Dependent.fromJson(Map<String, dynamic> json) => Dependent(
     id: json['dependentId']?.toString() ?? '',
     cui: json['cui']?.toString() ?? '',
@@ -45,6 +60,7 @@ class Dependent {
     firstLastName: json['firstLastName']?.toString() ?? '',
     secondLastName: _blankToNull(json['secondLastName']),
     categoryId: (json['categoryId'] as num?)?.toInt() ?? 0,
+    categoryName: _blankToNull(json['categoryName']),
   );
 
   static String? _blankToNull(Object? v) {
@@ -81,24 +97,3 @@ class DependentInput {
     'categoryId': categoryId,
   };
 }
-
-class Category {
-  const Category(this.id, this.name);
-  final int id;
-  final String name;
-}
-
-/// TEMPORAL: la tabla category_catalog de la API está vacía y no hay
-/// endpoint para listarla. Cuando exista, reemplazar por lo que devuelva
-/// la API (los ids deben coincidir con los de la base).
-const categories = [
-  Category(1, 'Sub-8'),
-  Category(2, 'Sub-10'),
-  Category(3, 'Sub-12'),
-  Category(4, 'Sub-14'),
-  Category(5, 'Sub-16'),
-];
-
-String categoryName(int id) => categories
-    .firstWhere((c) => c.id == id, orElse: () => Category(id, 'Categoría $id'))
-    .name;
