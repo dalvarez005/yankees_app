@@ -7,6 +7,7 @@ import 'package:yankees/features/categories/data/category_repository.dart';
 import 'package:yankees/features/family/data/dependent.dart';
 import 'package:yankees/features/family/data/dependent_repository.dart';
 import 'package:yankees/features/family/presentation/family_page.dart';
+import 'package:yankees/features/payments/data/payments_repository.dart';
 
 const _user = AppUser(
   id: 'u1',
@@ -26,6 +27,9 @@ void main() {
   setUp(() {
     GoogleFonts.config.allowRuntimeFetching = false;
     DependentRepository.instance = MockDependentRepository(
+      latency: Duration.zero,
+    );
+    PaymentsRepository.instance = MockPaymentsRepository(
       latency: Duration.zero,
     );
     CategoryRepository.instance = MockCategoryRepository(

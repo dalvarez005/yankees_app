@@ -8,6 +8,7 @@ import '../../auth/presentation/widgets/loading_button.dart';
 import '../../categories/data/category_repository.dart';
 import '../data/dependent.dart';
 import '../data/dependent_repository.dart';
+import '../../../core/widgets/feedback.dart';
 
 /// Alta o edición de un hijo. Devuelve el [Dependent] guardado al cerrar.
 class DependentFormPage extends StatefulWidget {
@@ -83,15 +84,7 @@ class _DependentFormPageState extends State<DependentFormPage> {
       Navigator.of(context).pop(saved);
     } on DependentException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.error,
-          ),
-        );
+      showAppMessage(context, e.message, error: true);
     } finally {
       if (mounted) setState(() => _saving = false);
     }

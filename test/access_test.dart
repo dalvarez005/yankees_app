@@ -12,6 +12,8 @@ import 'package:yankees/features/admin/data/admin_repository.dart';
 import 'package:yankees/features/admin/presentation/admin_home_page.dart';
 import 'package:yankees/features/auth/data/app_user.dart';
 import 'package:yankees/features/categories/data/category_repository.dart';
+import 'package:yankees/features/family/data/dependent_repository.dart';
+import 'package:yankees/features/payments/data/payments_repository.dart';
 
 AppUser _user(Set<String> permissions, [String role = 'X']) => AppUser(
   id: 'u1',
@@ -50,7 +52,18 @@ void main() {
   });
 
   group('AdminHomePage muestra solo las secciones permitidas', () {
-    setUp(() => GoogleFonts.config.allowRuntimeFetching = false);
+    setUp(() {
+      GoogleFonts.config.allowRuntimeFetching = false;
+      PaymentsRepository.instance = MockPaymentsRepository(
+        latency: Duration.zero,
+      );
+      CategoryRepository.instance = MockCategoryRepository(
+        latency: Duration.zero,
+      );
+      DependentRepository.instance = MockDependentRepository(
+        latency: Duration.zero,
+      );
+    });
 
     Future<void> pump(WidgetTester tester, Set<String> perms) async {
       await tester.pumpWidget(
@@ -70,7 +83,7 @@ void main() {
         'Categorías',
         'Mi familia',
       ]) {
-        expect(find.text(s), findsOneWidget, reason: s);
+        expect(find.text(s), findsWidgets, reason: s);
       }
       expect(find.text('Super admin'), findsOneWidget);
     });

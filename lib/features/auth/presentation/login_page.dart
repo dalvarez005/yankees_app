@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../app/app_colors.dart';
 import '../../../app/routes.dart';
 import '../data/app_user.dart';
 import '../data/auth_repository.dart';
@@ -11,6 +10,7 @@ import 'widgets/auth_header.dart';
 import 'widgets/auth_switch_link.dart';
 import 'widgets/google_button.dart';
 import 'widgets/loading_button.dart';
+import '../../../core/widgets/feedback.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -72,24 +72,19 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _forgotPassword() async {
     if (Validators.email(_email.text) != null) {
-      _showMessage('Escribe tu correo arriba para recuperar tu contraseña');
+      _showMessage(
+        'Escribe tu correo arriba para recuperar tu contraseña',
+        info: true,
+      );
       return;
     }
     await AuthRepository.instance.sendPasswordReset(_email.text);
     _showMessage('Te enviamos un enlace a ${_email.text.trim()}');
   }
 
-  void _showMessage(String message, {bool error = false}) {
+  void _showMessage(String message, {bool error = false, bool info = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: error ? AppColors.error : AppColors.navy,
-        ),
-      );
+    showAppMessage(context, message, error: error, info: info);
   }
 
   @override

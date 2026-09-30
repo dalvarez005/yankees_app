@@ -7,6 +7,7 @@ import '../../auth/presentation/validators.dart';
 import '../../auth/presentation/widgets/auth_field.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
 import '../data/profile_review_store.dart';
+import '../../../core/widgets/feedback.dart';
 
 /// Correo (solo lectura) + nombres y apellidos editables. Los valores de
 /// relleno que pone la API para cuentas de Google (p. ej. apellido
@@ -69,15 +70,7 @@ class _ProfileFormState extends State<ProfileForm> {
     if (!mounted) return;
     setState(() => _saving = false);
     if (error != null) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(error),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.error,
-          ),
-        );
+      showAppMessage(context, error, error: true);
     }
   }
 

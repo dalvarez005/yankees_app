@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import 'app/app_colors.dart';
 import 'app/app_theme.dart';
 import 'app/env.dart';
 import 'app/routes.dart';
 import 'core/network/api_client.dart';
+import 'core/widgets/feedback.dart';
 import 'core/session/session_manager.dart';
 import 'core/session/session_store.dart';
 import 'features/auth/data/api_auth_repository.dart';
@@ -13,17 +13,18 @@ import 'features/auth/data/auth_repository.dart';
 import 'features/auth/data/google_id_token_provider.dart';
 import 'features/auth/presentation/login_page.dart';
 import 'features/auth/presentation/register_page.dart';
+import 'features/family/data/dependent.dart';
 import 'features/family/data/dependent_repository.dart';
 import 'features/family/presentation/family_page.dart';
 import 'core/access/permissions.dart';
 import 'features/admin/data/admin_repository.dart';
 import 'features/admin/presentation/admin_home_page.dart';
 import 'features/categories/data/category_repository.dart';
+import 'features/payments/data/payments_repository.dart';
 import 'features/profile/data/profile_review_store.dart';
 import 'features/profile/presentation/confirm_profile_page.dart';
 
 final _navigatorKey = GlobalKey<NavigatorState>();
-final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,7 +44,12 @@ Future<void> main() async {
     DependentRepository.instance = ApiDependentRepository(api);
     CategoryRepository.instance = ApiCategoryRepository(api);
     AdminRepository.instance = ApiAdminRepository(api);
+    if (Env.paymentsApi) {
+      PaymentsRepository.instance = ApiPaymentsRepository(api);
+    }
   }
+
+  if (Env.useMock) await _seedMockFamily();
 
   // Si quedó una sesión guardada, se entra directo sin pedir login (salvo
   // que falte confirmar los datos del perfil).
@@ -61,21 +67,41 @@ Future<void> main() async {
   runApp(YankeesApp(initialUser: user, reviewProfile: review));
 }
 
+/// Modo sin API: dos hijos de ejemplo para que se vean cobros y pagos.
+Future<void> _seedMockFamily() async {
+  final repo = DependentRepository.instance;
+  for (final (cui, name, category) in [
+    ('3004013889191', 'Sofía', 3),
+    ('3004013889192', 'Mateo', 2),
+  ]) {
+    await repo.add(
+      DependentInput(
+        cui: cui,
+        firstName: name,
+        firstLastName: 'Castro',
+        categoryId: category,
+      ),
+    );
+  }
+}
+
 /// La API rechazó el refresh token: se vuelve al login avisando.
 void _onSessionExpired() {
   _navigatorKey.currentState?.pushNamedAndRemoveUntil(
     Routes.login,
     (_) => false,
   );
-  _messengerKey.currentState
-    ?..hideCurrentSnackBar()
-    ..showSnackBar(
-      const SnackBar(
-        content: Text('Tu sesión expiró. Inicia sesión de nuevo.'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.navy,
-      ),
-    );
+  // Tras el primer frame de la nueva ruta, para que el aviso quede encima.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final overlay = _navigatorKey.currentState?.overlay;
+    if (overlay != null) {
+      showToast(
+        overlay,
+        'Tu sesión expiró. Inicia sesión de nuevo.',
+        error: true,
+      );
+    }
+  });
 }
 
 class YankeesApp extends StatelessWidget {
@@ -94,7 +120,6 @@ class YankeesApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       navigatorKey: _navigatorKey,
-      scaffoldMessengerKey: _messengerKey,
       onGenerateInitialRoutes: (_) => [
         initialUser == null
             ? _route(const RouteSettings(name: Routes.login))

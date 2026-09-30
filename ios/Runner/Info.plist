@@ -89,5 +89,14 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Para tomar una foto del comprobante de pago.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Para elegir la foto del comprobante de pago.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>whatsapp</string>
+		<string>https</string>
+	</array>
 </dict>
 </plist>

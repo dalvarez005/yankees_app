@@ -43,6 +43,9 @@ class ApiClient {
 
   static const _timeout = Duration(seconds: 30);
 
+  /// Subir una foto con mala señal tarda más que un JSON.
+  static const _uploadTimeout = Duration(seconds: 90);
+
   /// [authenticated] en false para endpoints que no deben llevar ni renovar
   /// el token (login, registro, el propio refresh).
   Future<Map<String, dynamic>> post(
@@ -54,20 +57,42 @@ class ApiClient {
   Future<Map<String, dynamic>> get(String path, {bool authenticated = true}) =>
       _request('GET', path, authenticated: authenticated);
 
+  /// POST `multipart/form-data` con un archivo (p. ej. un comprobante).
+  Future<Map<String, dynamic>> postFile(
+    String path, {
+    required Map<String, String> fields,
+    required String fileField,
+    required String filePath,
+  }) => _request(
+    'POST',
+    path,
+    upload: _Upload(fields, fileField, filePath),
+    authenticated: true,
+  );
+
+  /// Headers para pedir recursos protegidos fuera del cliente (imágenes).
+  Future<Map<String, String>> authHeaders() async {
+    final token = await authenticator?.accessToken();
+    return {if (token != null) 'Authorization': 'Bearer $token'};
+  }
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {
     Map<String, dynamic>? body,
+    _Upload? upload,
     required bool authenticated,
   }) async {
     final auth = authenticated ? authenticator : null;
     final token = await auth?.accessToken();
-    var response = await _send(method, path, body, token);
+    var response = await _send(method, path, body, token, upload);
 
     // Token vencido o revocado: se renueva una vez y se reintenta.
     if (response.statusCode == 401 && token != null && auth != null) {
       final renewed = await auth.refreshAccessToken();
-      if (renewed != null) response = await _send(method, path, body, renewed);
+      if (renewed != null) {
+        response = await _send(method, path, body, renewed, upload);
+      }
     }
 
     final json = _decode(response.body);
@@ -93,14 +118,25 @@ class ApiClient {
     String method,
     String path,
     Map<String, dynamic>? body,
-    String? token,
-  ) async {
+    String? token, [
+    _Upload? upload,
+  ]) async {
     final uri = Uri.parse('$baseUrl$path');
     final headers = {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
     };
     try {
+      if (upload != null) {
+        final request = http.MultipartRequest('POST', uri)
+          ..fields.addAll(upload.fields)
+          ..files.add(
+            await http.MultipartFile.fromPath(upload.field, upload.path),
+          );
+        if (token != null) request.headers['Authorization'] = 'Bearer $token';
+        final streamed = await _client.send(request).timeout(_uploadTimeout);
+        return await http.Response.fromStream(streamed);
+      }
       final request = method == 'GET'
           ? _client.get(uri, headers: headers)
           : _client.post(uri, headers: headers, body: jsonEncode(body));
@@ -173,6 +209,18 @@ class ApiClient {
     'USUARIO NO EXISTE O ESTA INACTIVO':
         'El usuario no existe o está inactivo.',
     'ROL NO EXISTE O ESTA INACTIVO': 'Ese rol ya no está disponible.',
+    'COBRO NO EXISTE': 'No se encontró el cobro. Actualiza la lista.',
+    'COBRO YA TIENE COMPROBANTE EN REVISION':
+        'Ya enviaste un comprobante; está en revisión.',
+    'COBRO YA PAGADO': 'Este cobro ya está pagado.',
+    'NO SE PUEDE ANULAR UN COBRO PAGADO': 'No se puede anular un cobro pagado.',
+    'ARCHIVO NO VALIDO': 'El archivo debe ser una foto (JPG o PNG).',
+    'ARCHIVO DEMASIADO GRANDE': 'La foto es muy pesada (máximo 5 MB).',
+    'COMENTARIO OBLIGATORIO':
+        'Escribe el motivo del rechazo (mínimo 10 caracteres).',
+    'COMPROBANTE YA REVISADO': 'Otro administrador ya revisó este comprobante.',
+    'NUMERO DE WHATSAPP INVALIDO':
+        'Número inválido: código de país y número, solo dígitos.',
   };
 
   /// Traduce los mensajes conocidos (pueden venir varios separados por
@@ -192,4 +240,11 @@ class ApiClient {
     if (lower.isEmpty) return lower;
     return lower[0].toUpperCase() + lower.substring(1);
   }
+}
+
+class _Upload {
+  const _Upload(this.fields, this.field, this.path);
+  final Map<String, String> fields;
+  final String field;
+  final String path;
 }

@@ -5,6 +5,7 @@ import '../../../app/routes.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/data/auth_repository.dart';
 import 'profile_form.dart';
+import '../../../core/widgets/feedback.dart';
 
 /// "Mi perfil": ver y editar nombres y apellidos. Devuelve el usuario
 /// actualizado al cerrar (o null si no cambió).
@@ -47,15 +48,7 @@ class _ProfilePageState extends State<ProfilePage> {
       final updated = await AuthRepository.instance.updateProfile(input);
       if (!mounted) return null;
       setState(() => _user = _updated = updated);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('Tus datos se actualizaron.'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.navy,
-          ),
-        );
+      showAppMessage(context, 'Tus datos se actualizaron.');
       return null;
     } on AuthException catch (e) {
       return e.message;

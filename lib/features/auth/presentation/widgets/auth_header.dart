@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../app/app_colors.dart';
+import '../../../../core/widgets/app_ui.dart';
 
 /// Cabecera azul marino con curva inferior y logo del club.
 class AuthHeader extends StatelessWidget {
@@ -24,7 +25,7 @@ class AuthHeader extends StatelessWidget {
       // Íconos de la barra de estado en blanco sobre el fondo azul.
       value: SystemUiOverlayStyle.light,
       child: ClipPath(
-        clipper: _BottomCurveClipper(),
+        clipper: BrandCurveClipper(),
         child: Container(
           width: double.infinity,
           decoration: const BoxDecoration(
@@ -37,8 +38,16 @@ class AuthHeader extends StatelessWidget {
           child: Stack(
             children: [
               // Costuras decorativas estilo pelota de béisbol.
-              Positioned(right: -70, top: -40, child: _Stitches(size: 220)),
-              Positioned(left: -60, bottom: 10, child: _Stitches(size: 140)),
+              Positioned(
+                right: -70,
+                top: -40,
+                child: BaseballStitches(size: 220),
+              ),
+              Positioned(
+                left: -60,
+                bottom: 10,
+                child: BaseballStitches(size: 140),
+              ),
               SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
@@ -141,64 +150,4 @@ class _ClubBadge extends StatelessWidget {
       ],
     );
   }
-}
-
-class _Stitches extends StatelessWidget {
-  const _Stitches({required this.size});
-  final double size;
-
-  @override
-  Widget build(BuildContext context) =>
-      CustomPaint(size: Size.square(size), painter: _StitchesPainter());
-}
-
-class _StitchesPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.07)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    final r = size.width / 2;
-    final center = Offset(r, r);
-    canvas.drawCircle(center, r, paint);
-    final seam = Rect.fromCircle(
-      center: center.translate(-r * 0.9, 0),
-      radius: r * 0.7,
-    );
-    final seam2 = Rect.fromCircle(
-      center: center.translate(r * 0.9, 0),
-      radius: r * 0.7,
-    );
-    canvas.drawArc(seam, -0.9, 1.8, false, paint);
-    canvas.drawArc(seam2, 3.14 - 0.9, 1.8, false, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _BottomCurveClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    return Path()
-      ..lineTo(0, size.height - 40)
-      ..quadraticBezierTo(
-        size.width * 0.25,
-        size.height,
-        size.width * 0.55,
-        size.height - 20,
-      )
-      ..quadraticBezierTo(
-        size.width * 0.85,
-        size.height - 38,
-        size.width,
-        size.height - 10,
-      )
-      ..lineTo(size.width, 0)
-      ..close();
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }

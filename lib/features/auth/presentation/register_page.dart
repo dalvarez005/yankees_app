@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../app/app_colors.dart';
 import '../data/app_user.dart';
 import '../data/auth_repository.dart';
 import '../../profile/presentation/enter_app.dart';
@@ -10,6 +9,7 @@ import 'widgets/auth_header.dart';
 import 'widgets/auth_switch_link.dart';
 import 'widgets/google_button.dart';
 import 'widgets/loading_button.dart';
+import '../../../core/widgets/feedback.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -75,15 +75,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.error,
-        ),
-      );
+    showAppMessage(context, message, error: true);
   }
 
   @override

@@ -6,9 +6,20 @@ abstract final class Permissions {
   static const rolesManage = 'roles.gestionar';
   static const categoriesManage = 'categorias.gestionar';
   static const ownDependents = 'hijos.gestionar_propios';
+  static const chargesAssign = 'pagos.asignar';
+  static const paymentsReview = 'pagos.validar';
+  static const settingsManage = 'configuracion.gestionar';
 
   /// Con cualquiera de estos el usuario entra al panel de administración.
-  static const admin = {usersView, usersManage, rolesManage, categoriesManage};
+  static const admin = {
+    usersView,
+    usersManage,
+    rolesManage,
+    categoriesManage,
+    chargesAssign,
+    paymentsReview,
+    settingsManage,
+  };
 }
 
 /// Nombres legibles de los roles del sistema (los demás se muestran tal cual).

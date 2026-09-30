@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app_colors.dart';
+import '../../../core/widgets/app_ui.dart';
 import '../../auth/data/app_user.dart';
 import '../../profile/presentation/profile_page.dart';
 import '../../categories/data/category_repository.dart';
 import '../data/dependent.dart';
 import '../data/dependent_repository.dart';
 import 'dependent_form_page.dart';
+import '../../../core/widgets/feedback.dart';
+import '../../../core/format/formats.dart';
+import '../../payments/data/payment_models.dart';
+import '../../payments/data/payments_repository.dart';
+import '../../payments/presentation/charge_detail_page.dart';
+import '../../payments/presentation/charge_widgets.dart';
+import '../../payments/presentation/solvency_page.dart';
 
 /// Inicio del padre/madre/tutor: sus hijos registrados.
 class FamilyPage extends StatefulWidget {
@@ -27,6 +35,9 @@ class _FamilyPageState extends State<FamilyPage> {
   List<Category> _categories = const [];
   String? _error;
 
+  /// null mientras carga o si falló (los hijos se muestran igual).
+  Balance? _balance;
+
   @override
   void initState() {
     super.initState();
@@ -38,6 +49,7 @@ class _FamilyPageState extends State<FamilyPage> {
     try {
       // En paralelo, pero esperando cada uno para conservar el tipo de error.
       final categoriesFuture = _loadCategories();
+      final balanceFuture = _loadBalance();
       final items = await DependentRepository.instance.list();
       final categories = await categoriesFuture;
       if (mounted) {
@@ -48,9 +60,54 @@ class _FamilyPageState extends State<FamilyPage> {
           _categories = categories;
         });
       }
+      await balanceFuture;
     } on DependentException catch (e) {
       if (mounted) setState(() => _error = e.message);
     }
+  }
+
+  /// Si falla, la pantalla funciona igual sin el saldo.
+  Future<void> _loadBalance() async {
+    try {
+      final charges = await PaymentsRepository.instance.myCharges();
+      if (mounted) setState(() => _balance = Balance(charges));
+    } on PaymentsException {
+      // Sin saldo: se oculta la sección de pagos.
+    }
+  }
+
+  Future<void> _openCharge(Charge c) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => ChargeDetailPage(charge: c)),
+    );
+    if (changed == true) await _loadBalance();
+  }
+
+  Future<void> _openPayments() async {
+    final b = _balance;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => b != null && b.solvent
+            ? const SolvencyPage()
+            : const MyPaymentsPage(),
+      ),
+    );
+    await _loadBalance();
+  }
+
+  /// Lo más urgente primero: rechazados, vencidos, por pagar, en revisión.
+  List<Charge> get _urgent {
+    int rank(Charge c) => switch (c.status) {
+      ChargeStatus.rejected => 0,
+      ChargeStatus.pending when c.overdue => 1,
+      ChargeStatus.pending => 2,
+      _ => 3,
+    };
+    return [...?_balance?.open]..sort((a, b) {
+      final r = rank(a).compareTo(rank(b));
+      if (r != 0) return r;
+      return (a.dueDate ?? a.createdAt).compareTo(b.dueDate ?? b.createdAt);
+    });
   }
 
   /// Si falla, se siguen mostrando los hijos (sin nombre de categoría).
@@ -129,15 +186,7 @@ class _FamilyPageState extends State<FamilyPage> {
 
   void _showMessage(String message, {bool error = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: error ? AppColors.error : AppColors.navy,
-        ),
-      );
+    showAppMessage(context, message, error: error);
   }
 
   Future<void> _openProfile() async {
@@ -147,47 +196,89 @@ class _FamilyPageState extends State<FamilyPage> {
     if (updated != null && mounted) setState(() => _user = updated);
   }
 
+  String get _summary {
+    final n = _dependents?.length ?? 0;
+    if (_dependents == null) return 'Cargando tu familia…';
+    if (n == 0) return 'Aquí verás a tus hijos inscritos en el club.';
+    return n == 1
+        ? 'Tienes 1 hijo registrado.'
+        : 'Tienes $n hijos registrados.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final dependents = _dependents;
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.navy,
-        foregroundColor: Colors.white,
-        title: const Text('Mi familia'),
-        leading: widget.embedded
-            ? IconButton(
-                tooltip: 'Atrás',
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-                onPressed: () => Navigator.of(context).maybePop(),
-              )
-            : null,
-        actions: [
-          if (!widget.embedded)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Tooltip(
-                message: 'Mi perfil',
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: _openProfile,
-                  child: CircleAvatar(
-                    radius: 18,
-                    backgroundColor: Colors.white,
-                    foregroundColor: AppColors.navy,
-                    child: Text(
-                      _user.initials,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+    final balance = _balance;
+    final urgent = _urgent;
+    final list = [
+      for (final d in dependents ?? const <Dependent>[])
+        _DependentCard(
+          dependent: d,
+          categoryName: _categoryName(d),
+          owed: balance?.owedBy(d.id),
+          onEdit: () => _openForm(d),
+          onRemove: () => _confirmRemove(d),
+        ),
+    ];
+    final payments = [
+      if (widget.embedded && balance != null) ...[
+        _EmbeddedBalance(balance: balance, onTap: _openPayments),
+        const SizedBox(height: 10),
+      ],
+      if (urgent.isNotEmpty) ...[
+        Row(
+          children: [
+            const Expanded(child: ListHeader('Pagos pendientes')),
+            TextButton(
+              onPressed: _openPayments,
+              child: const Text('Ver todos'),
             ),
-        ],
+          ],
+        ),
+        for (final c in urgent.take(3))
+          ChargeCard(charge: c, onTap: () => _openCharge(c)),
+        const SizedBox(height: 10),
+      ],
+    ];
+    final content = AsyncListView(
+      loading: dependents == null,
+      error: _error,
+      onRetry: _load,
+      padding: EdgeInsets.fromLTRB(16, widget.embedded ? 16 : 4, 16, 100),
+      hero: widget.embedded
+          ? null
+          : _FamilyHeader(
+              user: _user,
+              summary: _summary,
+              onProfile: _openProfile,
+              balance: _balance,
+              onBalance: _openPayments,
+            ),
+      header: widget.embedded
+          ? Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+              child: Text(
+                _summary,
+                style: const TextStyle(color: AppColors.textMuted),
+              ),
+            )
+          : null,
+      empty: EmptyState(
+        icon: Icons.family_restroom_rounded,
+        title: 'Aún no registras a tus hijos',
+        message: 'Agrégalos con su CUI para ver sus pagos e inscripciones.',
+        actionLabel: 'Agregar hijo',
+        onAction: _openForm,
       ),
+      children: [
+        if (list.isNotEmpty) ...payments,
+        if (list.isNotEmpty) const ListHeader('Tus hijos'),
+        ...list,
+      ],
+    );
+
+    return Scaffold(
+      appBar: widget.embedded ? pageAppBar(context, 'Mi familia') : null,
       floatingActionButton: (dependents?.isNotEmpty ?? false)
           ? FloatingActionButton.extended(
               onPressed: _openForm,
@@ -200,151 +291,114 @@ class _FamilyPageState extends State<FamilyPage> {
       body: RefreshIndicator(
         onRefresh: _load,
         color: AppColors.navy,
-        child: _body(dependents),
+        edgeOffset: widget.embedded ? 0 : 80,
+        child: content,
       ),
-    );
-  }
-
-  Widget _body(List<Dependent>? dependents) {
-    if (_error != null && dependents == null) {
-      return _Scrollable(
-        child: _StatusMessage(
-          icon: Icons.cloud_off_rounded,
-          title: 'No pudimos cargar tu familia',
-          message: _error!,
-          actionLabel: 'Reintentar',
-          actionIcon: Icons.refresh_rounded,
-          onAction: _load,
-        ),
-      );
-    }
-    if (dependents == null) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.navy),
-      );
-    }
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-      children: [
-        Text(
-          'Hola, ${_user.displayName}',
-          style: Theme.of(context).textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          dependents.isEmpty
-              ? 'Aquí verás a tus hijos inscritos en el club.'
-              : dependents.length == 1
-              ? 'Tienes 1 hijo registrado.'
-              : 'Tienes ${dependents.length} hijos registrados.',
-          style: const TextStyle(color: AppColors.textMuted),
-        ),
-        const SizedBox(height: 20),
-        if (dependents.isEmpty)
-          _StatusMessage(
-            icon: Icons.family_restroom_rounded,
-            title: 'Aún no registras a tus hijos',
-            message: 'Agrégalos con su CUI para ver sus pagos e inscripciones.',
-            actionLabel: 'Agregar hijo',
-            onAction: _openForm,
-          )
-        else
-          for (final d in dependents)
-            _DependentCard(
-              dependent: d,
-              categoryName: _categoryName(d),
-              onEdit: () => _openForm(d),
-              onRemove: () => _confirmRemove(d),
-            ),
-      ],
     );
   }
 }
 
-class _DependentCard extends StatelessWidget {
-  const _DependentCard({
-    required this.dependent,
-    required this.categoryName,
-    required this.onEdit,
-    required this.onRemove,
+/// Cabecera del inicio del padre: marca, saludo y acceso al perfil.
+class _FamilyHeader extends StatelessWidget {
+  const _FamilyHeader({
+    required this.user,
+    required this.summary,
+    required this.onProfile,
+    required this.balance,
+    required this.onBalance,
   });
 
-  final Dependent dependent;
-  final String categoryName;
-  final VoidCallback onEdit;
-  final VoidCallback onRemove;
+  final AppUser user;
+  final String summary;
+  final VoidCallback onProfile;
+  final Balance? balance;
+  final VoidCallback onBalance;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      color: AppColors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppColors.border),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onEdit,
+    final text = Theme.of(context).textTheme;
+    return BrandHeader(
+      child: SafeArea(
+        bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 4, 14),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 56),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: AppColors.navy,
-                foregroundColor: Colors.white,
-                child: Text(
-                  dependent.initials,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      dependent.fullName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(11),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'CUI ${dependent.formattedCui}',
-                      style: const TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 13,
-                      ),
+                    child: const Icon(
+                      Icons.sports_baseball_rounded,
+                      color: AppColors.navy,
+                      size: 22,
                     ),
-                    const SizedBox(height: 8),
-                    _Chip(categoryName),
-                  ],
-                ),
-              ),
-              PopupMenuButton<String>(
-                tooltip: 'Opciones',
-                icon: const Icon(
-                  Icons.more_vert_rounded,
-                  color: AppColors.textMuted,
-                ),
-                onSelected: (v) => v == 'edit' ? onEdit() : onRemove(),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Editar')),
-                  PopupMenuItem(
-                    value: 'remove',
-                    child: Text(
-                      'Quitar',
-                      style: TextStyle(color: AppColors.error),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'MI FAMILIA',
+                    style: text.labelLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const Spacer(),
+                  Tooltip(
+                    message: 'Mi perfil',
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: onProfile,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.35),
+                            width: 2,
+                          ),
+                        ),
+                        child: CircleAvatar(
+                          radius: 18,
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.navy,
+                          child: Text(
+                            user.initials,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 26),
+              Text(
+                'Hola, ${user.displayName}',
+                style: text.headlineSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                summary,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.75),
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 18),
+              BalanceHeaderCard(balance: balance, onTap: onBalance),
             ],
           ),
         ),
@@ -353,73 +407,66 @@ class _DependentCard extends StatelessWidget {
   }
 }
 
-class _Chip extends StatelessWidget {
-  const _Chip(this.label);
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.navy.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: AppColors.navy,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusMessage extends StatelessWidget {
-  const _StatusMessage({
-    required this.icon,
-    required this.title,
-    required this.message,
-    required this.actionLabel,
-    required this.onAction,
-    this.actionIcon = Icons.add_rounded,
+class _DependentCard extends StatelessWidget {
+  const _DependentCard({
+    required this.dependent,
+    required this.categoryName,
+    required this.owed,
+    required this.onEdit,
+    required this.onRemove,
   });
 
-  final IconData icon;
-  final IconData actionIcon;
-  final String title;
-  final String message;
-  final String actionLabel;
-  final VoidCallback onAction;
+  final Dependent dependent;
+  final String categoryName;
+
+  /// Saldo pendiente del hijo; null si no se pudo consultar.
+  final double? owed;
+  final VoidCallback onEdit;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 12),
-      child: Column(
+    return ListCard(
+      onTap: onEdit,
+      leading: AppAvatar(
+        seed: dependent.cui,
+        initials: dependent.initials,
+        size: 50,
+      ),
+      title: dependent.fullName,
+      subtitle: 'CUI ${dependent.formattedCui}',
+      footer: Wrap(
+        spacing: 6,
+        runSpacing: 6,
         children: [
-          Icon(icon, size: 64, color: AppColors.navy.withValues(alpha: 0.8)),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
+          Pill(
+            categoryName,
+            tone: PillTone.brand,
+            icon: Icons.sports_baseball_outlined,
           ),
-          const SizedBox(height: 8),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: onAction,
-            icon: Icon(actionIcon),
-            label: Text(actionLabel),
-            style: FilledButton.styleFrom(minimumSize: const Size(200, 50)),
+          if (owed != null)
+            owed! > 0
+                ? Pill(
+                    'Debe ${formatMoney(owed!)}',
+                    tone: PillTone.warning,
+                    icon: Icons.schedule_rounded,
+                  )
+                : const Pill(
+                    'Solvente',
+                    tone: PillTone.success,
+                    icon: Icons.verified_rounded,
+                  ),
+        ],
+      ),
+      trailing: PopupMenuButton<String>(
+        tooltip: 'Opciones',
+        icon: const Icon(Icons.more_vert_rounded, color: AppColors.textMuted),
+        onSelected: (v) => v == 'edit' ? onEdit() : onRemove(),
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: 'edit', child: Text('Editar')),
+          PopupMenuItem(
+            value: 'remove',
+            child: Text('Quitar', style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
@@ -427,15 +474,25 @@ class _StatusMessage extends StatelessWidget {
   }
 }
 
-/// Para que el "deslizar para actualizar" funcione en los estados vacíos.
-class _Scrollable extends StatelessWidget {
-  const _Scrollable({required this.child});
-  final Widget child;
+/// Saldo dentro de "Mi familia" abierta desde el panel de admin.
+class _EmbeddedBalance extends StatelessWidget {
+  const _EmbeddedBalance({required this.balance, required this.onTap});
+
+  final Balance balance;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => ListView(
-    physics: const AlwaysScrollableScrollPhysics(),
-    padding: const EdgeInsets.all(20),
-    children: [child],
+  Widget build(BuildContext context) => ListCard(
+    onTap: onTap,
+    leading: AppAvatar(
+      seed: 'saldo',
+      icon: balance.solvent
+          ? Icons.verified_rounded
+          : Icons.account_balance_wallet_outlined,
+    ),
+    title: balance.solvent ? 'Solvente' : formatMoney(balance.totalOwed),
+    subtitle: balance.solvent
+        ? 'Estás al día con el club'
+        : 'Saldo pendiente · toca para ver tus pagos',
   );
 }

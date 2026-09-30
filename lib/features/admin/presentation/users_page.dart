@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_colors.dart';
 import '../../../core/access/permissions.dart';
+import '../../../core/widgets/app_ui.dart';
 import '../../../core/widgets/feedback.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
@@ -79,20 +80,11 @@ class _UsersPageState extends State<UsersPage> {
     if (!widget.user.can(Permissions.usersView)) return const NoAccessView();
     final users = _users;
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.navy,
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          tooltip: 'Atrás',
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        title: const Text('Usuarios'),
-      ),
+      appBar: pageAppBar(context, 'Usuarios'),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: TextField(
               controller: _search,
               textInputAction: TextInputAction.search,
@@ -115,46 +107,33 @@ class _UsersPageState extends State<UsersPage> {
             child: RefreshIndicator(
               onRefresh: _load,
               color: AppColors.navy,
-              child: users == null
-                  ? ListView(
-                      padding: const EdgeInsets.all(32),
-                      children: [
-                        if (_error == null)
-                          const Center(
-                            child: CircularProgressIndicator(
-                              color: AppColors.navy,
-                            ),
-                          )
-                        else ...[
-                          Text(_error!, textAlign: TextAlign.center),
-                          Center(
-                            child: TextButton(
-                              onPressed: _load,
-                              child: const Text('Reintentar'),
-                            ),
-                          ),
-                        ],
-                      ],
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                      itemCount: users.isEmpty ? 1 : users.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (_, i) => users.isEmpty
-                          ? const Padding(
-                              padding: EdgeInsets.all(32),
-                              child: Text(
-                                'No se encontraron usuarios.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: AppColors.textMuted),
-                              ),
-                            )
-                          : _UserTile(
-                              user: users[i],
-                              isSelf: users[i].id == widget.user.id,
-                              onTap: () => _open(users[i]),
-                            ),
+              child: AsyncListView(
+                loading: users == null,
+                error: _error,
+                onRetry: _load,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                header: users == null || users.isEmpty
+                    ? null
+                    : ListHeader(
+                        users.length == 1 ? 'Cuenta' : 'Cuentas',
+                        count: users.length,
+                      ),
+                empty: EmptyState(
+                  icon: Icons.person_search_rounded,
+                  title: 'Sin resultados',
+                  message: _search.text.trim().isEmpty
+                      ? 'Todavía no hay cuentas registradas.'
+                      : 'Ninguna cuenta coincide con "${_search.text.trim()}".',
+                ),
+                children: [
+                  for (final u in users ?? const <ManagedUser>[])
+                    _UserTile(
+                      user: u,
+                      isSelf: u.id == widget.user.id,
+                      onTap: () => _open(u),
                     ),
+                ],
+              ),
             ),
           ),
         ],
@@ -162,6 +141,20 @@ class _UsersPageState extends State<UsersPage> {
     );
   }
 }
+
+String _initials(ManagedUser u) => (u.name.isEmpty ? u.email : u.name)
+    .split(RegExp(r'[\s.@_-]+'))
+    .where((p) => p.isNotEmpty)
+    .take(2)
+    .map((p) => p[0].toUpperCase())
+    .join();
+
+/// El rol como pill: el super admin destacado.
+Widget _rolePill(String? roleName) => Pill(
+  roleLabel(roleName ?? '—'),
+  tone: PillTone.brand,
+  filled: roleName?.toUpperCase() == 'SUPER_ADMIN',
+);
 
 class _UserTile extends StatelessWidget {
   const _UserTile({
@@ -177,54 +170,29 @@ class _UserTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final u = user;
-    final initials = (u.name.isEmpty ? u.email : u.name)
-        .split(' ')
-        .where((p) => p.isNotEmpty)
-        .take(2)
-        .map((p) => p[0].toUpperCase())
-        .join();
-    return Card(
-      margin: EdgeInsets.zero,
-      elevation: 0,
-      color: u.active ? AppColors.surface : AppColors.background,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: AppColors.border),
+    return ListCard(
+      onTap: onTap,
+      dimmed: !u.active,
+      leading: AppAvatar(
+        seed: u.email,
+        initials: _initials(u),
+        muted: !u.active,
       ),
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: u.active ? AppColors.navy : AppColors.textMuted,
-          foregroundColor: Colors.white,
-          child: Text(initials, style: const TextStyle(fontSize: 13)),
-        ),
-        title: Text(
-          [u.name.isEmpty ? u.email : u.name, if (isSelf) '(tú)'].join(' '),
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          u.email,
-          style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              roleLabel(u.roleName ?? '—'),
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppColors.navy,
-              ),
+      title: [u.name.isEmpty ? u.email : u.name, if (isSelf) '(tú)'].join(' '),
+      subtitle: u.email,
+      footer: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          _rolePill(u.roleName),
+          if (!u.active)
+            const Pill(
+              'Inactivo',
+              tone: PillTone.danger,
+              icon: Icons.block_rounded,
             ),
-            if (!u.active)
-              const Text(
-                'Inactivo',
-                style: TextStyle(fontSize: 12, color: AppColors.error),
-              ),
-          ],
-        ),
+          if (u.googleLinked) const Pill('Google', icon: Icons.g_mobiledata),
+        ],
       ),
     );
   }
@@ -296,21 +264,47 @@ class _UserSheetState extends State<_UserSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            u.name.isEmpty ? u.email : u.name,
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              AppAvatar(
+                seed: u.email,
+                initials: _initials(u),
+                size: 56,
+                muted: !u.active,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      u.name.isEmpty ? u.email : u.name,
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      u.email,
+                      style: const TextStyle(color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            [
-              u.email,
-              if (u.googleLinked) 'Cuenta de Google',
-              u.active ? 'Activo' : 'Inactivo',
-            ].join(' · '),
-            style: const TextStyle(color: AppColors.textMuted),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _rolePill(u.roleName),
+              u.active
+                  ? const Pill('Activo', tone: PillTone.success)
+                  : const Pill('Inactivo', tone: PillTone.danger),
+              if (u.googleLinked)
+                const Pill('Cuenta de Google', icon: Icons.g_mobiledata),
+            ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           if (!widget.canManage)
             Text(
               'Rol: ${roleLabel(u.roleName ?? '—')}',

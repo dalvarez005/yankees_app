@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_colors.dart';
 import '../../../core/access/permissions.dart';
+import '../../../core/widgets/app_ui.dart';
 import '../../../core/widgets/feedback.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/presentation/widgets/auth_field.dart';
@@ -78,16 +79,7 @@ class _RolesPageState extends State<RolesPage> {
     if (!widget.user.can(Permissions.rolesManage)) return const NoAccessView();
     final roles = _roles;
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.navy,
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          tooltip: 'Atrás',
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        title: const Text('Roles y permisos'),
-      ),
+      appBar: pageAppBar(context, 'Roles y permisos'),
       floatingActionButton: roles == null
           ? null
           : FloatingActionButton.extended(
@@ -100,37 +92,30 @@ class _RolesPageState extends State<RolesPage> {
       body: RefreshIndicator(
         onRefresh: _load,
         color: AppColors.navy,
-        child: roles == null
-            ? ListView(
-                padding: const EdgeInsets.all(32),
-                children: [
-                  if (_error == null)
-                    const Center(
-                      child: CircularProgressIndicator(color: AppColors.navy),
-                    )
-                  else ...[
-                    Text(_error!, textAlign: TextAlign.center),
-                    Center(
-                      child: TextButton(
-                        onPressed: _load,
-                        child: const Text('Reintentar'),
-                      ),
-                    ),
-                  ],
-                ],
-              )
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                children: [
-                  for (final r in roles)
-                    _RoleTile(
-                      role: r,
-                      totalPermissions: _catalog.length,
-                      onTap: () => _open(r),
-                      onDelete: r.isSystem ? null : () => _delete(r),
-                    ),
-                ],
+        child: AsyncListView(
+          loading: roles == null,
+          error: _error,
+          onRetry: _load,
+          header: roles == null || roles.isEmpty
+              ? null
+              : ListHeader('Roles', count: roles.length),
+          empty: EmptyState(
+            icon: Icons.shield_outlined,
+            title: 'Aún no hay roles',
+            message: 'Crea uno y elige qué puede hacer.',
+            actionLabel: 'Nuevo rol',
+            onAction: _open,
+          ),
+          children: [
+            for (final r in roles ?? const <Role>[])
+              _RoleTile(
+                role: r,
+                totalPermissions: _catalog.length,
+                onTap: () => _open(r),
+                onDelete: r.isSystem ? null : () => _delete(r),
               ),
+          ],
+        ),
       ),
     );
   }
@@ -151,75 +136,61 @@ class _RoleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final perms = role.isSuperAdmin
-        ? 'Todos los permisos'
-        : '${role.permissions.length} de $totalPermissions permisos';
+    final count = role.isSuperAdmin
+        ? totalPermissions
+        : role.permissions.length;
+    final share = totalPermissions == 0 ? 0.0 : count / totalPermissions;
     final users = role.userCount == 1
         ? '1 usuario'
         : '${role.userCount} usuarios';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      elevation: 0,
-      color: AppColors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: AppColors.border),
+    final color = role.isSuperAdmin ? AppColors.navy : avatarColor(role.name);
+    return ListCard(
+      onTap: onTap,
+      leading: AppAvatar(
+        seed: role.name,
+        icon: role.isSuperAdmin
+            ? Icons.workspace_premium_rounded
+            : Icons.shield_outlined,
       ),
-      child: ListTile(
-        onTap: onTap,
-        contentPadding: const EdgeInsets.fromLTRB(16, 6, 4, 6),
-        title: Wrap(
-          spacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(
-              roleLabel(role.name),
-              style: const TextStyle(fontWeight: FontWeight.w600),
+      title: roleLabel(role.name),
+      subtitle: role.isSuperAdmin
+          ? 'Todos los permisos · $users'
+          : '$count de $totalPermissions permisos · $users',
+      footer: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: share,
+              minHeight: 5,
+              color: color,
+              backgroundColor: AppColors.border,
             ),
-            if (role.isSystem) const _Tag('Sistema'),
-            if (role.isDefault) const _Tag('Por defecto'),
+          ),
+          if (role.isSystem) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              children: [
+                const Pill('Sistema', icon: Icons.lock_outline_rounded),
+                if (role.isDefault)
+                  const Pill('Por defecto', tone: PillTone.brand),
+              ],
+            ),
           ],
-        ),
-        subtitle: Text(
-          '$perms · $users',
-          style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-        ),
-        trailing: onDelete == null
-            ? const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.textMuted,
-              )
-            : IconButton(
-                tooltip: 'Eliminar rol',
-                icon: const Icon(Icons.delete_outline_rounded),
-                color: AppColors.error,
-                onPressed: onDelete,
-              ),
+        ],
       ),
+      trailing: onDelete == null
+          ? null
+          : IconButton(
+              tooltip: 'Eliminar rol',
+              icon: const Icon(Icons.delete_outline_rounded),
+              color: AppColors.error,
+              onPressed: onDelete,
+            ),
     );
   }
-}
-
-class _Tag extends StatelessWidget {
-  const _Tag(this.label);
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-    decoration: BoxDecoration(
-      color: AppColors.navy.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      label,
-      style: const TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        color: AppColors.navy,
-      ),
-    ),
-  );
 }
 
 /// Crear o editar un rol. Devuelve true si guardó.

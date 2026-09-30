@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_colors.dart';
 import '../../../core/access/permissions.dart';
+import '../../../core/widgets/app_ui.dart';
 import '../../../core/widgets/feedback.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/presentation/widgets/auth_field.dart';
@@ -83,17 +84,10 @@ class _CategoriesAdminPageState extends State<CategoriesAdminPage> {
       return const NoAccessView();
     }
     final items = _items;
+    final active = [...?items?.where((c) => c.active)];
+    final inactive = [...?items?.where((c) => !c.active)];
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.navy,
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          tooltip: 'Atrás',
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        title: const Text('Categorías'),
-      ),
+      appBar: pageAppBar(context, 'Categorías'),
       floatingActionButton: items == null
           ? null
           : FloatingActionButton.extended(
@@ -106,55 +100,39 @@ class _CategoriesAdminPageState extends State<CategoriesAdminPage> {
       body: RefreshIndicator(
         onRefresh: _load,
         color: AppColors.navy,
-        child: switch ((items, _error)) {
-          (null, final String error) => ListView(
-            padding: const EdgeInsets.all(32),
-            children: [
-              Text(error, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              Center(
-                child: TextButton(
-                  onPressed: _load,
-                  child: const Text('Reintentar'),
-                ),
+        child: AsyncListView(
+          loading: items == null,
+          error: _error,
+          onRetry: _load,
+          empty: EmptyState(
+            icon: Icons.sports_baseball_outlined,
+            title: 'Aún no hay categorías',
+            message: 'Crea la primera para que los padres la elijan.',
+            actionLabel: 'Nueva categoría',
+            onAction: _edit,
+          ),
+          children: [
+            if (active.isNotEmpty) ListHeader('Activas', count: active.length),
+            for (final c in active)
+              _CategoryTile(
+                category: c,
+                onEdit: () => _edit(c),
+                onDeactivate: () => _deactivate(c),
               ),
+            if (inactive.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ListHeader('Inactivas', count: inactive.length),
+              for (final c in inactive) _CategoryTile(category: c),
             ],
-          ),
-          (null, _) => const Center(
-            child: CircularProgressIndicator(color: AppColors.navy),
-          ),
-          (final List<Category> list, _) => ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            children: [
-              if (list.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Text(
-                    'Aún no hay categorías. Crea la primera.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textMuted),
-                  ),
-                ),
-              for (final c in list)
-                _CategoryTile(
-                  category: c,
-                  onEdit: c.active ? () => _edit(c) : null,
-                  onDeactivate: c.active ? () => _deactivate(c) : null,
-                ),
-            ],
-          ),
-        },
+          ],
+        ),
       ),
     );
   }
 }
 
 class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({
-    required this.category,
-    required this.onEdit,
-    required this.onDeactivate,
-  });
+  const _CategoryTile({required this.category, this.onEdit, this.onDeactivate});
 
   final Category category;
 
@@ -165,75 +143,43 @@ class _CategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = category;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      elevation: 0,
-      color: c.active ? AppColors.surface : AppColors.background,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: AppColors.border),
+    return ListCard(
+      onTap: onEdit,
+      dimmed: !c.active,
+      leading: AppAvatar(
+        seed: c.name,
+        icon: Icons.sports_baseball_outlined,
+        muted: !c.active,
       ),
-      child: ListTile(
-        onTap: onEdit,
-        contentPadding: const EdgeInsets.fromLTRB(16, 6, 4, 6),
-        title: Row(
-          children: [
-            Flexible(
-              child: Text(
-                c.name,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: c.active ? AppColors.text : AppColors.textMuted,
-                ),
+      title: c.name,
+      subtitle: c.active
+          ? 'Disponible para inscribir hijos'
+          : 'No se ofrece a hijos nuevos',
+      trailing: onEdit == null
+          ? const Padding(
+              padding: EdgeInsets.only(right: 10),
+              child: Pill('Inactiva'),
+            )
+          : PopupMenuButton<String>(
+              tooltip: 'Opciones',
+              icon: const Icon(
+                Icons.more_vert_rounded,
+                color: AppColors.textMuted,
               ),
-            ),
-            if (!c.active) ...[
-              const SizedBox(width: 8),
-              const _Badge('Inactiva'),
-            ],
-          ],
-        ),
-        trailing: onEdit == null
-            ? null
-            : PopupMenuButton<String>(
-                tooltip: 'Opciones',
-                onSelected: (v) => v == 'edit' ? onEdit!() : onDeactivate!(),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Editar')),
-                  PopupMenuItem(
-                    value: 'deactivate',
-                    child: Text(
-                      'Desactivar',
-                      style: TextStyle(color: AppColors.error),
-                    ),
+              onSelected: (v) => v == 'edit' ? onEdit!() : onDeactivate!(),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'edit', child: Text('Editar')),
+                PopupMenuItem(
+                  value: 'deactivate',
+                  child: Text(
+                    'Desactivar',
+                    style: TextStyle(color: AppColors.error),
                   ),
-                ],
-              ),
-      ),
+                ),
+              ],
+            ),
     );
   }
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge(this.label);
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-    decoration: BoxDecoration(
-      color: AppColors.textMuted.withValues(alpha: 0.15),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      label,
-      style: const TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        color: AppColors.textMuted,
-      ),
-    ),
-  );
 }
 
 class _CategoryForm extends StatefulWidget {
