@@ -1,23 +1,29 @@
-/// Códigos de permiso de la API (tabla `permission`). La app muestra u
-/// oculta pantallas según los permisos del rol del usuario.
+/// Códigos de permiso de la API (tabla `permission`, catálogo del contrato
+/// v2). La app muestra u oculta pantallas según los permisos del rol.
+///
+/// Roles y permisos no son un permiso: solo los gestiona SUPER_ADMIN
+/// (ver [AppUser.isSuperAdmin]).
 abstract final class Permissions {
   static const usersView = 'usuarios.ver';
   static const usersManage = 'usuarios.gestionar';
-  static const rolesManage = 'roles.gestionar';
+  static const usersValidate = 'usuarios.validar';
   static const categoriesManage = 'categorias.gestionar';
-  static const ownDependents = 'hijos.gestionar_propios';
-  static const chargesAssign = 'pagos.asignar';
+  static const playersView = 'jugadores.ver';
   static const paymentsReview = 'pagos.validar';
+  static const paymentsManage = 'pagos.gestionar';
   static const settingsManage = 'configuracion.gestionar';
+  static const ownDependents = 'hijos.gestionar_propios';
 
-  /// Con cualquiera de estos el usuario entra al panel de administración.
+  /// Con cualquiera de estos el usuario entra al panel de administración
+  /// (y queda exento de cobros).
   static const admin = {
     usersView,
     usersManage,
-    rolesManage,
+    usersValidate,
     categoriesManage,
-    chargesAssign,
+    playersView,
     paymentsReview,
+    paymentsManage,
     settingsManage,
   };
 }

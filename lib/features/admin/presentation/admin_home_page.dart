@@ -9,11 +9,16 @@ import '../../categories/presentation/categories_admin_page.dart';
 import '../../family/data/dependent_repository.dart';
 import '../../family/presentation/family_page.dart';
 import '../../payments/data/payments_repository.dart';
+import '../../billing/data/billing_repository.dart';
+import '../../billing/presentation/pending_users_page.dart';
+import '../../notifications/presentation/notifications_page.dart';
 import '../../payments/presentation/admin/charges_admin_page.dart';
+import '../../payments/presentation/admin/insolvents_page.dart';
 import '../../payments/presentation/admin/payment_settings_page.dart';
 import '../../payments/presentation/admin/review_payments_page.dart';
 import '../../profile/presentation/profile_page.dart';
 import '../data/admin_repository.dart';
+import 'players_page.dart';
 import 'roles_page.dart';
 import 'users_page.dart';
 
@@ -56,15 +61,19 @@ class _AdminHomePageState extends State<AdminHomePage> {
     await Future.wait([
       if (_user.can(Permissions.paymentsReview))
         load('reviews', () async => (await payments.reviewQueue()).length),
-      if (_user.can(Permissions.chargesAssign))
+      if (_user.can(Permissions.usersValidate))
         load(
-          'owed',
-          () async =>
-              (await payments.charges()).where((c) => c.status.owes).length,
+          'pending',
+          () async => (await BillingRepository.instance.pendingUsers()).length,
+        ),
+      if (_user.can(Permissions.paymentsManage))
+        load(
+          'insolvent',
+          () async => (await payments.solvencyReport()).insolventUsers,
         ),
       if (_user.can(Permissions.usersView))
         load('users', () async => (await admin.users()).length),
-      if (_user.can(Permissions.rolesManage))
+      if (_user.isSuperAdmin)
         load('roles', () async => (await admin.roles()).length),
       if (_user.can(Permissions.categoriesManage))
         load(
@@ -97,13 +106,22 @@ class _AdminHomePageState extends State<AdminHomePage> {
   @override
   Widget build(BuildContext context) {
     final reviews = _stats['reviews'] ?? 0;
-    final owed = _stats['owed'] ?? 0;
+    final pending = _stats['pending'] ?? 0;
+    final insolvent = _stats['insolvent'] ?? 0;
     final stats = [
       if (_user.can(Permissions.paymentsReview))
         _Stat('Por validar', _stats['reviews'], Icons.fact_check_rounded),
+      if (_user.can(Permissions.usersValidate))
+        _Stat(
+          'Usuarios pendientes',
+          _stats['pending'],
+          Icons.how_to_reg_rounded,
+        ),
+      if (_user.can(Permissions.paymentsManage))
+        _Stat('Insolventes', _stats['insolvent'], Icons.warning_amber_rounded),
       if (_user.can(Permissions.usersView))
         _Stat('Cuentas', _stats['users'], Icons.people_alt_rounded),
-      if (_user.can(Permissions.rolesManage))
+      if (_user.isSuperAdmin)
         _Stat('Roles', _stats['roles'], Icons.shield_rounded),
       if (_user.can(Permissions.categoriesManage))
         _Stat('Categorías', _stats['categories'], Icons.sports_baseball),
@@ -122,14 +140,36 @@ class _AdminHomePageState extends State<AdminHomePage> {
           badge: _stats['reviews'],
           onTap: () => _open(ReviewPaymentsPage(user: _user)),
         ),
-      if (_user.can(Permissions.chargesAssign))
+      if (_user.can(Permissions.usersValidate))
+        _Action(
+          icon: Icons.how_to_reg_outlined,
+          color: const Color(0xFF0369A1),
+          title: 'Usuarios por validar',
+          subtitle: pending > 0
+              ? '$pending ${pending == 1 ? 'espera' : 'esperan'} sus cuotas'
+              : 'Define inscripción y mensualidad',
+          badge: _stats['pending'],
+          onTap: () => _open(PendingUsersPage(user: _user)),
+        ),
+      if (_user.can(Permissions.paymentsManage)) ...[
+        _Action(
+          icon: Icons.warning_amber_rounded,
+          color: AppColors.error,
+          title: 'Insolventes',
+          subtitle: insolvent > 0
+              ? '$insolvent con pagos vencidos'
+              : 'Familias con pagos vencidos',
+          badge: _stats['insolvent'],
+          onTap: () => _open(InsolventsPage(user: _user)),
+        ),
         _Action(
           icon: Icons.receipt_long_outlined,
           color: const Color(0xFFBE123C),
           title: 'Cobros',
-          subtitle: owed > 0 ? '$owed sin pagar' : 'Asigna mensualidades y más',
+          subtitle: 'Inscripciones y mensualidades',
           onTap: () => _open(ChargesAdminPage(user: _user)),
         ),
+      ],
       if (_user.can(Permissions.usersView))
         _Action(
           icon: Icons.people_alt_outlined,
@@ -140,7 +180,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
               : 'Consulta cuentas y roles',
           onTap: () => _open(UsersPage(user: _user)),
         ),
-      if (_user.can(Permissions.rolesManage))
+      if (_user.isSuperAdmin)
         _Action(
           icon: Icons.admin_panel_settings_outlined,
           color: const Color(0xFF6D28D9),
@@ -156,12 +196,20 @@ class _AdminHomePageState extends State<AdminHomePage> {
           subtitle: 'Moscos, Infantil, Juvenil…',
           onTap: () => _open(CategoriesAdminPage(user: _user)),
         ),
+      if (_user.can(Permissions.playersView))
+        _Action(
+          icon: Icons.groups_rounded,
+          color: const Color(0xFF0369A1),
+          title: 'Jugadores',
+          subtitle: 'Todos los hijos por categoría',
+          onTap: () => _open(PlayersPage(user: _user)),
+        ),
       if (_user.can(Permissions.settingsManage))
         _Action(
-          icon: Icons.support_agent_rounded,
+          icon: Icons.tune_rounded,
           color: const Color(0xFF0F766E),
-          title: 'Contacto de pagos',
-          subtitle: 'WhatsApp para dudas',
+          title: 'Configuración',
+          subtitle: 'Cuotas, día límite y WhatsApp',
           onTap: () => _open(PaymentSettingsPage(user: _user)),
         ),
       if (_user.can(Permissions.ownDependents))
@@ -183,7 +231,12 @@ class _AdminHomePageState extends State<AdminHomePage> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.zero,
           children: [
-            _Header(user: _user, stats: stats, onProfile: _openProfile),
+            _Header(
+              user: _user,
+              stats: stats,
+              onProfile: _openProfile,
+              onNotificationsChanged: _loadStats,
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
               child: actions.isEmpty
@@ -224,11 +277,13 @@ class _Header extends StatelessWidget {
     required this.user,
     required this.stats,
     required this.onProfile,
+    required this.onNotificationsChanged,
   });
 
   final AppUser user;
   final List<_Stat> stats;
   final VoidCallback onProfile;
+  final VoidCallback onNotificationsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -266,6 +321,11 @@ class _Header extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
+                  NotificationBell(
+                    user: user,
+                    onChanged: onNotificationsChanged,
+                  ),
+                  const SizedBox(width: 4),
                   Tooltip(
                     message: 'Mi perfil',
                     child: InkWell(

@@ -1,5 +1,8 @@
+import 'dart:math';
+
 import '../../../core/network/api_client.dart';
 import '../../../core/session/session_manager.dart';
+import '../../billing/data/billing_models.dart';
 import 'app_user.dart';
 import 'auth_repository.dart';
 import 'google_id_token_provider.dart';
@@ -36,18 +39,11 @@ class ApiAuthRepository implements AuthRepository {
     required String password,
   }) async {
     final normalizedEmail = email.trim().toLowerCase();
-    final json = await _call(
-      () => _api.post('/api/User/ManageUser', {
-        'typeOperation': 'A',
-        'userData': {
-          // La cuenta se identifica por correo: user_name = email.
-          'username': normalizedEmail,
-          'email': normalizedEmail,
-          'password': password,
-          'firstName': firstName.trim(),
-          'firstLastName': firstLastName.trim(),
-        },
-      }, authenticated: false),
+    final json = await _createAccount(
+      normalizedEmail,
+      password: password,
+      firstName: firstName,
+      firstLastName: firstLastName,
     );
     _ensureSuccess(json, fallback: 'No se pudo crear la cuenta.');
 
@@ -84,7 +80,7 @@ class ApiAuthRepository implements AuthRepository {
     final Map<String, dynamic> json;
     try {
       json = await _api.post('/api/Auth/signin-password', {
-        'username': email,
+        'email': email,
         'password': password,
       }, authenticated: false);
     } on ApiException catch (e) {
@@ -128,6 +124,8 @@ class ApiAuthRepository implements AuthRepository {
     _ensureSuccess(json, fallback: 'No se pudo cargar tu perfil.');
     final data = json['userData'] as Map<String, dynamic>? ?? const {};
     final access = json['access'] as Map<String, dynamic>? ?? const {};
+    // `billing` va junto a `access`; se acepta también dentro de userData.
+    final billing = json['billing'] ?? data['billing'];
     final user = AppUser(
       id: _nonEmpty(data['userId']) ?? current?.id ?? '',
       email: _nonEmpty(data['email']) ?? current?.email ?? '',
@@ -140,6 +138,9 @@ class ApiAuthRepository implements AuthRepository {
       permissions: {
         ...?(access['permissions'] as List?)?.map((p) => p.toString()),
       },
+      billing: billing is Map<String, dynamic>
+          ? Billing.fromJson(billing)
+          : current?.billing,
     );
     await _session.updateUser(user);
     return user;
@@ -246,6 +247,47 @@ class ApiAuthRepository implements AuthRepository {
     await _session.end();
     await _google.signOut();
     await _pending.signOut();
+  }
+
+  /// La API pide un `username` sin "@" y único. Se usa la parte del correo
+  /// antes de la arroba; si ya está tomada (juan@gmail.com y
+  /// juan@hotmail.com), se reintenta con un sufijo numérico.
+  Future<Map<String, dynamic>> _createAccount(
+    String email, {
+    required String password,
+    required String firstName,
+    required String firstLastName,
+  }) async {
+    final base = usernameFor(email);
+    for (var attempt = 0; ; attempt++) {
+      final username = attempt == 0
+          ? base
+          : '$base${_random.nextInt(9000) + 1000}';
+      try {
+        return await _api.post('/api/User/ManageUser', {
+          'typeOperation': 'A',
+          'userData': {
+            'username': username,
+            'email': email,
+            'password': password,
+            'firstName': firstName.trim(),
+            'firstLastName': firstLastName.trim(),
+          },
+        }, authenticated: false);
+      } on ApiException catch (e) {
+        final taken =
+            e.raw?.toUpperCase().contains('USERNAME ALREADY') ?? false;
+        if (!taken || attempt >= 3) throw AuthException(e.message);
+      }
+    }
+  }
+
+  static final _random = Random();
+
+  /// "Juan.Perez+club@gmail.com" → "juan.perez+club" (máx. 50).
+  static String usernameFor(String email) {
+    final local = email.trim().toLowerCase().split('@').first;
+    return local.length > 50 ? local.substring(0, 50) : local;
   }
 
   Future<Map<String, dynamic>> _call(

@@ -1,5 +1,6 @@
 import 'api_auth_repository.dart';
 import '../../../core/access/permissions.dart';
+import '../../billing/data/billing_models.dart';
 import 'app_user.dart';
 
 class AuthException implements Exception {
@@ -62,6 +63,7 @@ class ProfileInput {
 /// Usuarios de prueba:
 ///   admin@yankees.com / admin123  (administrador)
 ///   padre@yankees.com / padre123  (padre / tutor)
+///   nuevo@yankees.com / nuevo123  (padre sin validar: pantalla de espera)
 class MockAuthRepository implements AuthRepository {
   final _users = <String, ({AppUser user, String password})>{
     'admin@yankees.com': (
@@ -72,6 +74,7 @@ class MockAuthRepository implements AuthRepository {
         firstLastName: 'Yankees',
         roleName: 'SUPER_ADMIN',
         permissions: {...Permissions.admin, Permissions.ownDependents},
+        billing: Billing(status: BillingStatus.notApplicable),
       ),
       password: 'admin123',
     ),
@@ -83,10 +86,29 @@ class MockAuthRepository implements AuthRepository {
         firstLastName: 'Pérez',
         roleName: 'USER_BASE',
         permissions: {Permissions.ownDependents},
+        billing: _active,
       ),
       password: 'padre123',
     ),
+    'nuevo@yankees.com': (
+      user: const AppUser(
+        id: '3',
+        email: 'nuevo@yankees.com',
+        firstName: 'Lucía',
+        firstLastName: 'Ramírez',
+        roleName: 'USER_BASE',
+        permissions: {Permissions.ownDependents},
+        billing: Billing(status: BillingStatus.pending),
+      ),
+      password: 'nuevo123',
+    ),
   };
+
+  static const _active = Billing(
+    status: BillingStatus.active,
+    enrollmentFee: 250,
+    monthlyFee: 150,
+  );
 
   Future<void> _latency() => Future.delayed(const Duration(milliseconds: 900));
 
@@ -125,6 +147,7 @@ class MockAuthRepository implements AuthRepository {
       firstLastName: firstLastName.trim(),
       roleName: 'USER_BASE',
       permissions: const {Permissions.ownDependents},
+      billing: _active,
     );
     _users[key] = (user: user, password: password);
     return _current = user;
@@ -140,6 +163,7 @@ class MockAuthRepository implements AuthRepository {
       firstLastName: 'López',
       roleName: 'USER_BASE',
       permissions: {Permissions.ownDependents},
+      billing: _active,
     );
   }
 
@@ -167,6 +191,7 @@ class MockAuthRepository implements AuthRepository {
       email: user.email,
       roleName: user.roleName,
       permissions: user.permissions,
+      billing: user.billing,
       firstName: input.firstName,
       secondName: input.secondName,
       firstLastName: input.firstLastName,

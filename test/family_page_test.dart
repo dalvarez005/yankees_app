@@ -7,6 +7,8 @@ import 'package:yankees/features/categories/data/category_repository.dart';
 import 'package:yankees/features/family/data/dependent.dart';
 import 'package:yankees/features/family/data/dependent_repository.dart';
 import 'package:yankees/features/family/presentation/family_page.dart';
+import 'package:yankees/features/notifications/data/notification_repository.dart';
+import 'package:yankees/features/payments/data/payment_models.dart';
 import 'package:yankees/features/payments/data/payments_repository.dart';
 
 const _user = AppUser(
@@ -23,6 +25,26 @@ Widget _app() => MaterialApp(
   home: const FamilyPage(user: _user),
 );
 
+/// Saldo fijo y sin cobros.
+class _FixedBalance extends MockPaymentsRepository {
+  _FixedBalance(this.balance) : super(latency: Duration.zero);
+  final AccountBalance balance;
+
+  @override
+  Future<AccountBalance> myBalance() async => balance;
+
+  @override
+  Future<List<Charge>> myCharges() async => const [];
+}
+
+/// Pantalla alta: los cobros de la familia empujan el estado vacío hacia
+/// abajo.
+void _tall(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1080, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+}
+
 void main() {
   setUp(() {
     GoogleFonts.config.allowRuntimeFetching = false;
@@ -33,6 +55,9 @@ void main() {
       latency: Duration.zero,
     );
     CategoryRepository.instance = MockCategoryRepository(
+      latency: Duration.zero,
+    );
+    NotificationRepository.instance = MockNotificationRepository(
       latency: Duration.zero,
     );
   });
@@ -54,6 +79,7 @@ void main() {
           firstName: 'Sofía',
           firstLastName: 'Castro',
           categoryId: 2,
+          age: 8,
         ),
       ),
     );
@@ -61,13 +87,37 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sofía Castro'), findsOneWidget);
-    expect(find.text('CUI 1234 56789 0101'), findsOneWidget);
+    expect(find.text('8 años · CUI 1234 56789 0101'), findsOneWidget);
     // La categoría viene del catálogo (id 2 = Preinfantil en el mock).
     expect(find.text('Preinfantil'), findsOneWidget);
     expect(find.text('Tienes 1 hijo registrado.'), findsOneWidget);
   });
 
+  testWidgets('muestra el saldo: insolvente con el monto vencido', (
+    tester,
+  ) async {
+    PaymentsRepository.instance = _FixedBalance(
+      const AccountBalance(solvent: false, totalOwed: 400, overdueAmount: 150),
+    );
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    expect(find.text('INSOLVENTE'), findsOneWidget);
+    expect(find.text('Q 150.00 vencido'), findsOneWidget);
+    expect(find.text('Total por pagar Q 400.00'), findsOneWidget);
+  });
+
+  testWidgets('al día muestra Solvente', (tester) async {
+    PaymentsRepository.instance = _FixedBalance(
+      const AccountBalance(solvent: true),
+    );
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    expect(find.text('Solvente'), findsOneWidget);
+    expect(find.text('Estás al día'), findsOneWidget);
+  });
+
   testWidgets('el formulario ofrece solo categorías activas', (tester) async {
+    _tall(tester);
     await tester.runAsync(
       () => CategoryRepository.instance.deactivate(1), // Moscos
     );
@@ -87,6 +137,7 @@ void main() {
   testWidgets('el formulario valida CUI, nombre, apellido y categoría', (
     tester,
   ) async {
+    _tall(tester);
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Agregar hijo'));

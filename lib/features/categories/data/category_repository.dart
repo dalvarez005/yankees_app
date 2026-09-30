@@ -39,6 +39,7 @@ abstract class CategoryRepository {
 
   /// La API lo rechaza si algún hijo la tiene asignada.
   Future<Category> deactivate(int id);
+  Future<Category> reactivate(int id);
 }
 
 class ApiCategoryRepository implements CategoryRepository {
@@ -68,6 +69,14 @@ class ApiCategoryRepository implements CategoryRepository {
 
   @override
   Future<Category> deactivate(int id) => _save('D', {'categoryId': id});
+
+  @override
+  Future<Category> reactivate(int id) async {
+    final json = await _call(() => _api.patch('/api/Category/$id/reactivate'));
+    return Category.fromJson(
+      json['categoryData'] as Map<String, dynamic>? ?? const {},
+    );
+  }
 
   Future<Category> _save(String operation, Map<String, dynamic> data) async {
     final json = await _call(
@@ -136,6 +145,13 @@ class MockCategoryRepository implements CategoryRepository {
     await Future.delayed(latency);
     final i = _items.indexWhere((c) => c.id == id);
     return _items[i] = Category(id: id, name: _items[i].name, active: false);
+  }
+
+  @override
+  Future<Category> reactivate(int id) async {
+    await Future.delayed(latency);
+    final i = _items.indexWhere((c) => c.id == id);
+    return _items[i] = Category(id: id, name: _items[i].name);
   }
 
   void _checkUnique(String name, {int? except}) {

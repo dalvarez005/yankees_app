@@ -44,6 +44,9 @@ class _DependentFormPageState extends State<DependentFormPage> {
   late final _secondLastName = TextEditingController(
     text: widget.dependent?.secondLastName,
   );
+  late final _age = TextEditingController(
+    text: widget.dependent?.age?.toString(),
+  );
   late int? _categoryId = widget.dependent?.categoryId;
   bool _saving = false;
 
@@ -57,6 +60,7 @@ class _DependentFormPageState extends State<DependentFormPage> {
       _secondName,
       _firstLastName,
       _secondLastName,
+      _age,
     ]) {
       c.dispose();
     }
@@ -74,6 +78,7 @@ class _DependentFormPageState extends State<DependentFormPage> {
       firstLastName: _firstLastName.text.trim(),
       secondLastName: _secondLastName.text.trim(),
       categoryId: _categoryId!,
+      age: int.parse(_age.text.trim()),
     );
     try {
       final repo = DependentRepository.instance;
@@ -162,9 +167,27 @@ class _DependentFormPageState extends State<DependentFormPage> {
                       icon: Icons.person_outline_rounded,
                       controller: _secondLastName,
                       textCapitalization: TextCapitalization.words,
-                      textInputAction: TextInputAction.done,
                       validator: (v) =>
                           Validators.optionalName(v, 'El segundo apellido'),
+                    ),
+                    gap,
+                    AuthField(
+                      label: 'Edad',
+                      hint: 'Ej. 9',
+                      icon: Icons.cake_outlined,
+                      controller: _age,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(3),
+                      ],
+                      validator: (v) {
+                        final age = int.tryParse(v?.trim() ?? '');
+                        if (age == null) return 'La edad es obligatoria';
+                        if (age > 120) return 'Edad no válida';
+                        return null;
+                      },
                     ),
                     gap,
                     _CategoryField(

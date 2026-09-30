@@ -7,9 +7,12 @@ import 'package:http/http.dart' as http;
 
 /// Error de la API ya traducido a un mensaje para mostrar al usuario.
 class ApiException implements Exception {
-  const ApiException(this.message, {this.code, this.statusCode});
+  const ApiException(this.message, {this.code, this.statusCode, this.raw});
 
   final String message;
+
+  /// Mensaje original de la API (para decidir reintentos, no para mostrar).
+  final String? raw;
 
   /// responseCode de la API: "05" no autorizado, "30" campo inválido,
   /// "96" error del sistema.
@@ -57,18 +60,29 @@ class ApiClient {
   Future<Map<String, dynamic>> get(String path, {bool authenticated = true}) =>
       _request('GET', path, authenticated: authenticated);
 
-  /// POST `multipart/form-data` con un archivo (p. ej. un comprobante).
+  Future<Map<String, dynamic>> patch(
+    String path, [
+    Map<String, dynamic>? body,
+  ]) => _request('PATCH', path, body: body, authenticated: true);
+
+  /// POST `multipart/form-data` con un archivo (p. ej. un comprobante):
+  /// desde disco ([filePath]) o ya en memoria ([bytes] + [fileName]).
   Future<Map<String, dynamic>> postFile(
     String path, {
     required Map<String, String> fields,
     required String fileField,
-    required String filePath,
-  }) => _request(
-    'POST',
-    path,
-    upload: _Upload(fields, fileField, filePath),
-    authenticated: true,
-  );
+    String? filePath,
+    List<int>? bytes,
+    String fileName = 'archivo',
+  }) {
+    assert(filePath != null || bytes != null, 'Falta el archivo');
+    return _request(
+      'POST',
+      path,
+      upload: _Upload(fields, fileField, filePath, bytes, fileName),
+      authenticated: true,
+    );
+  }
 
   /// Headers para pedir recursos protegidos fuera del cliente (imágenes).
   Future<Map<String, String>> authHeaders() async {
@@ -111,6 +125,7 @@ class ApiClient {
           : _friendlyMessage(code, json?['message']?.toString()),
       code: code,
       statusCode: response.statusCode,
+      raw: json?['message']?.toString(),
     );
   }
 
@@ -131,15 +146,27 @@ class ApiClient {
         final request = http.MultipartRequest('POST', uri)
           ..fields.addAll(upload.fields)
           ..files.add(
-            await http.MultipartFile.fromPath(upload.field, upload.path),
+            upload.bytes != null
+                ? http.MultipartFile.fromBytes(
+                    upload.field,
+                    upload.bytes!,
+                    filename: upload.fileName,
+                  )
+                : await http.MultipartFile.fromPath(upload.field, upload.path!),
           );
         if (token != null) request.headers['Authorization'] = 'Bearer $token';
         final streamed = await _client.send(request).timeout(_uploadTimeout);
         return await http.Response.fromStream(streamed);
       }
-      final request = method == 'GET'
-          ? _client.get(uri, headers: headers)
-          : _client.post(uri, headers: headers, body: jsonEncode(body));
+      final request = switch (method) {
+        'GET' => _client.get(uri, headers: headers),
+        'PATCH' => _client.patch(
+          uri,
+          headers: headers,
+          body: body == null ? null : jsonEncode(body),
+        ),
+        _ => _client.post(uri, headers: headers, body: jsonEncode(body)),
+      };
       return await request.timeout(_timeout);
     } on TimeoutException {
       throw const ApiException(
@@ -185,6 +212,12 @@ class ApiClient {
   static const _known = {
     'EMAIL ALREADY EXISTS': 'Ya existe una cuenta con ese correo.',
     'USERNAME ALREADY EXISTS': 'Ya existe una cuenta con ese correo.',
+    'USERNAME INVALIDO': 'No se pudo crear la cuenta. Intenta de nuevo.',
+    'EMAIL NO VALIDO': 'Escribe un correo válido.',
+    'EMAIL OBLIGATORIO O INVALIDO': 'Escribe un correo válido.',
+    'AGE ES OBLIGATORIO': 'Escribe la edad.',
+    'AGE DEBE ESTAR ENTRE 0 Y 120': 'La edad debe estar entre 0 y 120 años.',
+    'EDAD DEBE ESTAR ENTRE 0 Y 120': 'La edad debe estar entre 0 y 120 años.',
     'CUI YA ASOCIADO A UN DEPENDIENTE ACTIVO': 'Ese CUI ya está registrado.',
     'DEPENDENT NOT FOUND': 'No se encontró el registro. Actualiza la lista.',
     'NO FIELDS TO UPDATE': 'No hay cambios para guardar.',
@@ -209,13 +242,39 @@ class ApiClient {
     'USUARIO NO EXISTE O ESTA INACTIVO':
         'El usuario no existe o está inactivo.',
     'ROL NO EXISTE O ESTA INACTIVO': 'Ese rol ya no está disponible.',
+    'NO SE PUEDE ASIGNAR SUPER_ADMIN':
+        'El rol de super admin no se asigna desde la app.',
+    // Validación de usuarios y cuotas.
+    'USUARIO YA VALIDADO': 'Este usuario ya fue validado. Actualiza la lista.',
+    'USUARIO NO REQUIERE VALIDACION':
+        'Este usuario es administrador: no se le cobran cuotas.',
+    'MONTO INVALIDO': 'El monto debe ser mayor a Q 0 y hasta Q 100,000.',
+    'INSCRIPCION YA PAGADA':
+        'La inscripción ya se pagó o está en revisión: no se puede cambiar.',
+    'PERFIL PENDIENTE DE VALIDACION':
+        'Tu perfil aún está en configuración. El club te avisará cuando '
+        'esté listo.',
+    'CONFIGURACION INVALIDA':
+        'Revisa los datos: día límite entre 1 y 28, montos no negativos y '
+        'WhatsApp de 8 a 15 dígitos.',
+    // Cobros y comprobantes.
     'COBRO NO EXISTE': 'No se encontró el cobro. Actualiza la lista.',
     'COBRO YA TIENE COMPROBANTE EN REVISION':
         'Ya enviaste un comprobante; está en revisión.',
     'COBRO YA PAGADO': 'Este cobro ya está pagado.',
     'NO SE PUEDE ANULAR UN COBRO PAGADO': 'No se puede anular un cobro pagado.',
-    'ARCHIVO NO VALIDO': 'El archivo debe ser una foto (JPG o PNG).',
-    'ARCHIVO DEMASIADO GRANDE': 'La foto es muy pesada (máximo 5 MB).',
+    'MONTO NO COINCIDE CON EL COBRO':
+        'El monto del comprobante debe ser igual al del cobro.',
+    'REFERENCIA YA UTILIZADA':
+        'Ese número de boleta o transferencia ya se usó en otro comprobante.',
+    'COMPROBANTE DUPLICADO':
+        'Este comprobante ya se había enviado antes. Si es un pago nuevo, '
+        'sube la foto del comprobante correcto.',
+    'ARCHIVO NO VALIDO': 'El archivo debe ser una foto (JPG, PNG o WebP).',
+    'ARCHIVO DEMASIADO GRANDE': 'La foto es muy pesada (máximo 2 MB).',
+    'FECHA DE PAGO INVALIDA': 'La fecha de pago no puede ser futura.',
+    'DATOS DEL COMPROBANTE INCOMPLETOS':
+        'Completa monto, número de boleta, descripción y fecha de pago.',
     'COMENTARIO OBLIGATORIO':
         'Escribe el motivo del rechazo (mínimo 10 caracteres).',
     'COMPROBANTE YA REVISADO': 'Otro administrador ya revisó este comprobante.',
@@ -243,8 +302,10 @@ class ApiClient {
 }
 
 class _Upload {
-  const _Upload(this.fields, this.field, this.path);
+  const _Upload(this.fields, this.field, this.path, this.bytes, this.fileName);
   final Map<String, String> fields;
   final String field;
-  final String path;
+  final String? path;
+  final List<int>? bytes;
+  final String fileName;
 }

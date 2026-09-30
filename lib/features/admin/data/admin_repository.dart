@@ -95,6 +95,52 @@ class ManagedUser {
   );
 }
 
+/// Jugador (hijo inscrito) en el listado general del club.
+class Player {
+  const Player({
+    required this.name,
+    required this.lastName,
+    this.dependentId,
+    this.cui,
+    this.age,
+    this.categoryId,
+    this.categoryName,
+    this.parentUserId,
+    this.parentName,
+    this.parentSolvent,
+  });
+
+  final String? dependentId;
+  final String name;
+  final String lastName;
+  final String? cui;
+  final int? age;
+  final int? categoryId;
+  final String? categoryName;
+  final String? parentUserId;
+  final String? parentName;
+
+  /// null si el padre está exento o pendiente de validación.
+  final bool? parentSolvent;
+
+  String get fullName => [name, lastName].where((p) => p.isNotEmpty).join(' ');
+
+  factory Player.fromJson(Map<String, dynamic> j) => Player(
+    name: j['name']?.toString().trim() ?? '',
+    lastName: j['lastName']?.toString().trim() ?? '',
+    cui: j['cui']?.toString(),
+    age: (j['age'] as num?)?.toInt(),
+    categoryId: (j['categoryId'] as num?)?.toInt(),
+    categoryName: j['categoryName']?.toString(),
+    dependentId: j['dependentId']?.toString(),
+    parentUserId: j['parentUserId']?.toString(),
+    parentName: j['parentName']?.toString(),
+    parentSolvent: j['parentSolvent'] is bool
+        ? j['parentSolvent'] as bool
+        : null,
+  );
+}
+
 /// Roles, permisos y usuarios. Cada operación exige su permiso en la API
 /// (la app además oculta lo que el usuario no puede hacer).
 abstract class AdminRepository {
@@ -115,6 +161,10 @@ abstract class AdminRepository {
   Future<List<ManagedUser>> users({String? search});
   Future<void> setUserRole(String userId, int roleId);
   Future<ManagedUser> setUserActive(String userId, bool active);
+
+  /// Hijos inscritos con su categoría y su padre (`jugadores.ver`),
+  /// filtrados en la API por categoría y nombre o CUI.
+  Future<List<Player>> players({int? categoryId, String? search});
 }
 
 class ApiAdminRepository implements AdminRepository {
@@ -220,6 +270,28 @@ class ApiAdminRepository implements AdminRepository {
     );
   }
 
+  @override
+  Future<List<Player>> players({int? categoryId, String? search}) async {
+    final all = <Player>[];
+    final q = search?.trim() ?? '';
+    // Se recorren las páginas; el club no tendrá miles de jugadores.
+    for (var page = 1; page <= 20; page++) {
+      final path = Uri(
+        path: '/api/Dependent/GetDependentDataByCategory',
+        queryParameters: {
+          'categoryId': ?categoryId?.toString(),
+          if (q.isNotEmpty) 'search': q,
+          'page': '$page',
+          'pageSize': '100',
+        },
+      );
+      final json = await _call(() => _api.get(path.toString()));
+      all.addAll(_list(json['dependentData'], Player.fromJson));
+      if (json['hasNext'] != true) break;
+    }
+    return all;
+  }
+
   Future<Role> _setPermissions(int roleId, Set<String> permissions) async {
     final json = await _call(
       () => _api.post(_rolePermissions, {
@@ -277,5 +349,8 @@ class UnavailableAdminRepository implements AdminRepository {
   Future<void> setUserRole(String userId, int roleId) async => _fail();
   @override
   Future<ManagedUser> setUserActive(String userId, bool active) async =>
+      _fail();
+  @override
+  Future<List<Player>> players({int? categoryId, String? search}) async =>
       _fail();
 }

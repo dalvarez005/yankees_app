@@ -141,5 +141,6 @@ class MockDependentRepository implements DependentRepository {
     firstLastName: input.firstLastName,
     secondLastName: input.secondLastName,
     categoryId: input.categoryId,
+    age: input.age,
   );
 }

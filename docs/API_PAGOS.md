@@ -1,296 +1,287 @@
-# API: módulo de pagos (cobros, comprobantes y solvencia)
+# Contrato v2: cuotas, validación de usuarios, comprobantes y solvencia
 
-La app móvil ya tiene las pantallas terminadas y funcionando con datos simulados. Este documento define lo que la API tiene que exponer para conectarlas. El cliente ya está escrito contra este contrato en `lib/features/payments/data/payments_repository.dart` (`ApiPaymentsRepository`). Para probarlo contra la API se compila con `--dart-define=PAYMENTS_API=true`.
-
-> Todo sigue las convenciones actuales de la API: `responseCode`/`responseMessage`, `typeOperation`, paginación `page`/`pageSize`, funciones de PostgreSQL con `responsecode`/`response_message`, sin FKs físicas y permisos con `RequirePermission`.
-
----
-
-## 1. Flujo
-
-```
-Admin asigna cobro ──► [P] Por pagar ──(padre sube comprobante)──► [R] En revisión
-                           ▲                                            │
-                           │                         ┌──────────────────┴─────────────┐
-                           │                  admin aprueba                  admin rechaza
-                           │                         ▼                      (comentario obligatorio)
-                           │                   [A] Pagado                          ▼
-                           └────────(padre sube otro comprobante)────────── [X] Rechazado
-
-Admin anula (solo P, R o X) ──► [C] Anulado (no se cobra, no se muestra al padre)
-```
-
-- **Padre:** ve lo que debe por cada hijo, sube la foto del comprobante y ve el estado. Si se lo rechazan, ve el motivo y un botón que abre WhatsApp con el número que configuró el club. Si se lo aprueban, ve su **solvencia**.
-- **Admin con `pagos.asignar`:** asigna cobros a un hijo o a todos los hijos de una categoría, y puede anularlos.
-- **Admin con `pagos.validar`:** revisa la foto y aprueba, o rechaza con motivo obligatorio.
-- **Admin con `configuracion.gestionar`:** define el número de WhatsApp de contacto.
-
-**Solvente** = no tiene cobros en estado `P`, `R` ni `X`. Lo que está en revisión todavía cuenta como deuda.
+> Fuente de verdad compartida entre la API (`YankeesManagement.Api`) y la app (`yankees`).
+> Si algo cambia, se cambia **aquí primero**. Convenciones de siempre:
+> - Respuestas con `responseCode` (`"00"` = ok) y `responseMessage`; errores con `message`.
+> - Códigos: `05` → 401 (sesión), `03` → 403 (sin permiso), `30`/`39` → 400, `96` → 500.
+> - Paginación `page` / `pageSize` (máximo 100) → `{ page, pageSize, hasNext, totalRecords? }`.
+> - Funciones SQL con `responsecode` y `response_message`, sin FKs físicas.
+> - Permisos con `RequirePermission` en C# **y** `fn_has_permission` en SQL.
+> - Fechas en ISO-8601 UTC; fechas sin hora como `yyyy-MM-dd`; montos en `numeric(10,2)` (en JSON, número).
+> - Moneda: quetzales (GTQ).
 
 ---
 
-## 2. Permisos nuevos
+## 1. Reglas de negocio
 
-Van a la tabla `permission` (migración 24). SUPER_ADMIN los recibe automáticamente por `fn_get_user_access`.
+### 1.1 Roles y permisos
+- **Un solo SUPER_ADMIN.** Se define **solo por base de datos** con `SELECT * FROM fn_set_super_admin('correo@x.com')`: degrada al anterior al rol 1 y deja registro en `user_role_audit`.
+  - La API **nunca** puede asignar ni quitar el rol SUPER_ADMIN. `UpdateUserRole` con el rol SUPER_ADMIN → `03 NO SE PUEDE ASIGNAR SUPER_ADMIN`.
+  - Un trigger impide que haya más de un usuario activo con ese rol.
+- **SUPER_ADMIN tiene todos los permisos, incluidos los futuros.**
+- **Crear y editar roles y asignarles permisos: solo SUPER_ADMIN.** Se valida con `fn_is_super_admin`, no con un permiso. Por eso **se elimina el permiso `roles.gestionar`**.
+- **Catálogo final de permisos** (tabla `permission`):
 
-```sql
-INSERT INTO public.permission (code, name, description, module) VALUES
-  ('pagos.asignar',  'Asignar cobros',        'Asignar y anular cobros a los hijos.',                 'Pagos'),
-  ('pagos.validar',  'Validar comprobantes',  'Aprobar o rechazar comprobantes de pago.',             'Pagos'),
-  ('configuracion.gestionar', 'Configuración', 'Cambiar el WhatsApp de contacto y otros ajustes.',    'Configuración')
-ON CONFLICT (code) DO UPDATE
-SET name = EXCLUDED.name, description = EXCLUDED.description, module = EXCLUDED.module;
-```
+| Código | Módulo | Qué permite |
+|---|---|---|
+| `usuarios.ver` | Usuarios | Ver usuarios, su rol y su estado |
+| `usuarios.gestionar` | Usuarios | Cambiar rol (excepto SUPER_ADMIN) y activar/desactivar |
+| `usuarios.validar` | Usuarios | Validar usuarios nuevos y definir o editar sus cuotas |
+| `categorias.gestionar` | Categorías | Crear, editar, desactivar y reactivar categorías |
+| `jugadores.ver` | Jugadores | Ver todos los hijos por categoría |
+| `pagos.validar` | Pagos | Aprobar o rechazar comprobantes |
+| `pagos.gestionar` | Pagos | Ver todos los cobros, anular, ver insolventes y reportes, notificar insolventes |
+| `configuracion.gestionar` | Configuración | Cuotas por defecto, día límite de pago y WhatsApp de contacto |
+| `hijos.gestionar_propios` | Familia | Gestionar sus propios hijos y pagos |
 
-Los endpoints del padre usan el permiso existente `hijos.gestionar_propios`.
+- Se eliminan `roles.gestionar` y `pagos.asignar`, junto con sus filas en `role_permission`.
+
+### 1.2 Alta y validación de usuarios
+- Todo usuario nuevo (registro por correo o por Google) queda con **perfil de cobro pendiente**: `billing_profile.status = 'P'`.
+- Mientras esté en `P`, la app muestra **"Estamos configurando tu perfil"** y no deja avanzar. En la API, los endpoints de familia y pagos del padre responden `03 PERFIL PENDIENTE DE VALIDACION`. `/me`, logout y notificaciones siguen funcionando.
+- **Exentos:** los usuarios cuyo rol tiene al menos un permiso de administración (cualquiera distinto de `hijos.gestionar_propios`), y SUPER_ADMIN. Para ellos `billing.status = 'N'` (no aplica) y no se les cobra.
+- Al crearse un perfil `P`, se envía una notificación `USER_PENDING_VALIDATION` a **todos** los usuarios activos con `usuarios.validar`.
+- **Validar** (con `usuarios.validar`): se definen `enrollmentFee` (inscripción, > 0) y `monthlyFee` (mensualidad, > 0).
+  - Los valores sugeridos son los de configuración por defecto.
+  - El perfil pasa a `A`.
+  - Se crea **en ese momento** el cobro de **inscripción**, que vence a los `dueDay` días de la validación (por defecto, a los 15 días).
+  - La primera **mensualidad** se genera el día 1 del mes siguiente.
+  - Se notifica al usuario (`USER_VALIDATED`).
+- **Editar cuotas** (con `usuarios.validar`):
+  - La mensualidad nueva aplica **desde el próximo período**; los cobros ya generados no cambian.
+  - La inscripción solo se puede cambiar si su cobro sigue en `P` o `X`, y se actualiza el monto de ese cobro.
+- Usuarios existentes al migrar: los que no son exentos quedan en `P`, y los exentos en `N`.
+
+### 1.3 Cobros
+- **Dos tipos:** `I` = inscripción (una vez por usuario) y `M` = mensualidad (una por usuario y por período `YYYY-MM`).
+- Los cobros son **por usuario (familia)**, no por hijo.
+- Estados del cobro:
+  - `P`: por pagar.
+  - `R`: comprobante en revisión.
+  - `X`: comprobante rechazado; se puede subir otro.
+  - `A`: pagado.
+  - `C`: anulado.
+- **Mensualidad automática:**
+  - Un `BackgroundService` en la API corre al iniciar y cada hora, y llama a `fn_generate_monthly_charges(p_today date)`.
+  - Desde el día 1 de cada mes crea el cobro `M` del período actual para cada usuario con perfil `A` y `monthly_fee > 0`, con `amount = monthly_fee` vigente y `due_date` = día `dueDay` del mes (por defecto el 15).
+  - Es **idempotente**: índice único `(users_id, type, period)`.
+  - Notifica `CHARGE_CREATED` al usuario.
+- **Pago en tiempo:** el comprobante se subió en `due_date` o antes, y luego se aprobó (`paidOnTime = true`).
+- **Insolvente:** el usuario tiene al menos un cobro en `P` o `X` con `due_date < hoy`.
+  - Un cobro en `R` **no** hace insolvente: el padre ya pagó a tiempo y está en revisión.
+  - Si después se rechaza y ya venció, pasa a insolvente.
+  - Se calcula en las consultas, sin guardar un flag, con la función `fn_is_insolvent(user_id)` y una vista para los reportes.
+
+### 1.4 Comprobantes (`journal_payment`)
+Se reutiliza la tabla existente `journal_payment` y se completa. Está vacía, así que se puede alterar.
+
+| Columna | Origen | Notas |
+|---|---|---|
+| `id` | API | GUID sin guiones (varchar 44, como los demás ids) |
+| `users_id` | token | Dueño |
+| `charge_id` | request | **Nueva**. Cobro que paga |
+| `description` | **padre (obligatorio)** | 5 a 250 caracteres, p. ej. "Depósito Banrural mensualidad octubre" |
+| `amount` | **padre (obligatorio)** | Tiene que ser **igual** al monto del cobro; si no → `30 MONTO NO COINCIDE CON EL COBRO`. Cambiar el tipo `money` a `numeric(10,2)` |
+| `bank_reference` | **padre (obligatorio)** | Número de boleta o transferencia, 4 a 60 caracteres, alfanumérico con guiones. **Único** entre los comprobantes no rechazados → `30 REFERENCIA YA UTILIZADA` |
+| `payment_date` | **padre (obligatorio)** | **Nueva**. Fecha del depósito, que no puede ser futura |
+| `file_hash` | API | SHA-256 (hex) de los bytes **recibidos**. Repetido → `30 COMPROBANTE DUPLICADO` |
+| `perceptual_hash` | API | dHash de 64 bits (16 caracteres hex) de la imagen decodificada. Si la distancia de Hamming con cualquier comprobante previo es ≤ 6 → `30 COMPROBANTE DUPLICADO` |
+| `ocr_fingertip` | API | SHA-256 del texto OCR **normalizado** (mayúsculas, sin espacios ni signos). El OCR lo hace la app (ML Kit) y lo manda como `ocrText`. Si el texto normalizado tiene 20 caracteres o más y coincide con otro → `30 COMPROBANTE DUPLICADO`. Sin texto útil, se guarda el hash del texto vacío y no se compara |
+| `status` | API | `R` en revisión, `A` aprobado, `X` rechazado |
+| `storage_key`, `content_type`, `file_size` | API | **Nuevas**. Archivo guardado |
+| `suspected_edit`, `edit_signals` | app + API | **Nuevas**. Indicios de edición, que se le muestran al validador |
+| `review_comment`, `reviewed_by`, `review_datetime` | API | **Nuevas**. El comentario es obligatorio si se rechaza (10 a 500 caracteres) |
+| `create_datetime`, `update_datetime` | API | |
+
+- **Compresión:**
+  - **App:** comprime al máximo razonable antes de subir: WebP, lado mayor 1280 px, calidad 55, sin metadatos. La meta es que pese 250 KB o menos.
+  - **API:** vuelve a codificar a WebP (lado mayor 1280 px, calidad 50) con SkiaSharp, sin metadatos, y guarda solo esa versión. El archivo recibido no puede pasar de **2 MB** → `30 ARCHIVO DEMASIADO GRANDE`. Tipos aceptados, verificados por *magic bytes*: JPEG, PNG y WebP → `30 ARCHIVO NO VALIDO`.
+- **Imagen editada** (heurística, **no es infalible**):
+  - La app lee el EXIF del **original, antes de comprimir** y manda `editSignals` (texto separado por `;`) si detecta:
+    - que el campo `Software` menciona un editor (Photoshop, GIMP, Snapseed, Lightroom, PicsArt, Canva, Pixlr, Fotor, Editor…);
+    - que `DateTimeOriginal` y `DateTime` no coinciden;
+    - dimensiones atípicas.
+  - La API también revisa los metadatos del archivo recibido, por si llegaran. Si hay señales, marca `suspected_edit = true`: **no rechaza**, pero el validador ve la advertencia.
+- Al subir: se guarda el comprobante en `R`, el cobro pasa a `R`, y se notifica `VOUCHER_SUBMITTED` a quienes tienen `pagos.validar`.
+- Al revisar:
+  - Si se aprueba: el comprobante y el cobro quedan en `A`, se guarda `paid_datetime` y `paid_on_time`, y se notifica `VOUCHER_APPROVED`.
+  - Si se rechaza: el comprobante y el cobro quedan en `X` con el comentario, y se notifica `VOUCHER_REJECTED`.
+- El archivo se guarda en disco, en `Storage:VoucherPath` (appsettings, fuera de `wwwroot`), con nombre `{id}.webp`. Solo se sirve por `GetVoucherFile` con autorización.
+
+### 1.5 Notificaciones (in-app)
+- Tabla `notification`: `id`, `users_id`, `type`, `title`, `body`, `data` (jsonb), `create_datetime`, `read_datetime`.
+- Tipos:
+  - `USER_PENDING_VALIDATION`: `data {userId}`.
+  - `USER_VALIDATED`.
+  - `CHARGE_CREATED`: `data {chargeId}`.
+  - `VOUCHER_SUBMITTED`: `data {voucherId, chargeId}`.
+  - `VOUCHER_APPROVED` y `VOUCHER_REJECTED`: `data {chargeId}`.
+  - `PAYMENT_REMINDER`: `data {overdueAmount}`.
+- Push (FCM) queda **para una fase siguiente**, porque requiere un proyecto de Firebase. Las tablas y los tipos ya sirven para eso.
+
+### 1.6 Recordatorio a insolventes
+- Con `pagos.gestionar` se notifica a todos los insolventes o a los que se seleccionen.
+- Máximo **un recordatorio por usuario cada 24 h**; los demás se cuentan como `skipped`.
+- El mensaje por defecto indica el monto vencido; el admin puede agregar un texto de hasta 300 caracteres.
 
 ---
 
-## 3. Tablas sugeridas
+## 2. Configuración (tabla `parameter`, `type_parameter` = "PAGOS")
 
-Sin FKs físicas, como el resto del proyecto. Montos en `numeric(10,2)` y fechas en UTC.
-
-```sql
--- Cobro asignado a un hijo.
-CREATE TABLE public.charge (
-    id              varchar(44) PRIMARY KEY,          -- mismo formato de id que users/dependent
-    dependent_id    varchar(44) NOT NULL,
-    users_id        varchar(44) NOT NULL,             -- padre dueño del hijo al momento de asignar
-    concept         varchar(100) NOT NULL,
-    description     varchar(250),
-    amount          numeric(10,2) NOT NULL CHECK (amount > 0),
-    due_date        date,
-    status          varchar(1) NOT NULL DEFAULT 'P' CHECK (status IN ('P','R','X','A','C')),
-    batch_id        varchar(44),                      -- agrupa los cobros creados juntos por categoría
-    created_by      varchar(44) NOT NULL,
-    create_datetime timestamp NOT NULL DEFAULT NOW(),
-    update_datetime timestamp NOT NULL DEFAULT NOW(),
-    paid_datetime   timestamp,
-    cancelled_by    varchar(44)
-);
-CREATE INDEX ix_charge_users_status ON public.charge (users_id, status);
-CREATE INDEX ix_charge_status_created ON public.charge (status, create_datetime);
-
--- Cada comprobante subido (historial: un cobro puede tener varios si lo rechazan).
-CREATE TABLE public.payment_voucher (
-    id              varchar(44) PRIMARY KEY,
-    charge_id       varchar(44) NOT NULL,
-    uploaded_by     varchar(44) NOT NULL,
-    file_key        varchar(300) NOT NULL,            -- ruta en disco / blob; NUNCA se expone directo
-    content_type    varchar(50) NOT NULL,
-    file_size       integer NOT NULL,
-    reference       varchar(60),                      -- nro. de boleta/transferencia (opcional)
-    status          varchar(1) NOT NULL DEFAULT 'R' CHECK (status IN ('R','A','X')),
-    review_comment  varchar(500),                     -- obligatorio si status = 'X'
-    reviewed_by     varchar(44),
-    upload_datetime timestamp NOT NULL DEFAULT NOW(),
-    review_datetime timestamp
-);
-CREATE INDEX ix_voucher_charge ON public.payment_voucher (charge_id, upload_datetime DESC);
--- Solo un comprobante en revisión por cobro:
-CREATE UNIQUE INDEX ux_voucher_one_in_review ON public.payment_voucher (charge_id) WHERE status = 'R';
-
--- Ajustes clave/valor (el WhatsApp de contacto y futuros).
-CREATE TABLE public.app_setting (
-    key             varchar(60) PRIMARY KEY,
-    value           varchar(500),
-    updated_by      varchar(44),
-    update_datetime timestamp NOT NULL DEFAULT NOW()
-);
-INSERT INTO public.app_setting (key, value) VALUES
-  ('payments.whatsapp_number', ''),
-  ('payments.contact_name', 'Tesorería del club')
-ON CONFLICT DO NOTHING;
-```
+| Clave | Por defecto | Uso |
+|---|---|---|
+| `DEFAULT_ENROLLMENT_FEE` | `0` | Sugerido al validar |
+| `DEFAULT_MONTHLY_FEE` | `0` | Sugerido al validar |
+| `PAYMENT_DUE_DAY` | `15` | Día límite de la mensualidad (1 a 28) y días para pagar la inscripción |
+| `WHATSAPP_NUMBER` | `''` | Contacto si se rechaza un comprobante |
+| `WHATSAPP_CONTACT_NAME` | `Tesorería del club` | |
 
 ---
 
-## 4. Endpoints
+## 3. Endpoints
 
-Todas las respuestas llevan `responseCode` (`"00"` = éxito) y `responseMessage`. Los errores siguen el `GlobalExceptionFilter`: `05` → 401, `03` → 403 (sin permiso) y el resto → 400 con `message`.
-
-### 4.1 Objeto `Charge` (lo usan casi todos los endpoints)
-
+### 3.1 Perfil
+`GET /api/User/me` agrega el objeto `billing`:
 ```json
-{
-  "chargeId": "c-8f2…",
-  "dependentId": "d-1a…",
-  "dependentName": "Sofía Castro",
-  "categoryName": "Infantil",
-  "concept": "Mensualidad de octubre",
-  "description": "Incluye seguro",
-  "amount": 150.00,
-  "dueDate": "2026-10-15",
+"billing": {
   "status": "P",
-  "createdAt": "2026-09-29T20:10:00Z",
-  "paidAt": null,
-  "parentName": "Luis Istacuy",
-  "parentEmail": "luis@correo.com",
-  "voucher": {
-    "voucherId": "v-77…",
-    "status": "X",
-    "uploadedAt": "2026-09-30T14:02:00Z",
-    "fileUrl": "/api/Payment/GetVoucherFile/v-77…",
-    "reference": "889231",
-    "reviewComment": "El monto no coincide con el cobro.",
-    "reviewedAt": "2026-09-30T18:40:00Z",
-    "reviewedBy": "Tesorería"
-  }
+  "enrollmentFee": 250.00,
+  "monthlyFee": 150.00,
+  "solvent": true,
+  "overdueAmount": 0.00
 }
 ```
+- `status` es `P`, `A` o `N`.
+- Con `P` o `N`, los montos pueden ser `null`.
 
-- `status` del cobro: `P` por pagar, `R` en revisión, `X` rechazado, `A` pagado, `C` anulado.
-- `voucher` es el **último** comprobante, o `null` si nunca subió uno. Su `status` es `R`, `A` o `X`.
-- `parentName` y `parentEmail` solo en endpoints de admin; en los del padre pueden omitirse.
-- `reviewedBy` es un nombre para mostrar (nombre del admin o "Tesorería"), no un id.
-- Fechas ISO-8601 en UTC; `dueDate` como fecha sin hora (`yyyy-MM-dd`).
+### 3.2 Validación de usuarios (`usuarios.validar`)
 
-### 4.2 Padre (`[Authorize]` + `hijos.gestionar_propios`)
-
-| Método | Ruta | Descripción |
+| Método | Ruta | Request → Response |
 |---|---|---|
-| GET | `/api/Payment/GetMyCharges` | Cobros de **sus** hijos, sin los anulados (`C`). Respuesta `{ chargeData: Charge[] }`. |
-| POST | `/api/Payment/UploadVoucher` | `multipart/form-data`: `chargeId`, `reference` (opcional) y `file`. Respuesta `{ chargeData: Charge }` con el cobro ya en `R`. |
-| GET | `/api/Payment/GetContactSettings` | `{ settingsData: { whatsappNumber: "50255551234", displayName: "Tesorería del club" } }` |
-| GET | `/api/Payment/GetVoucherFile/{voucherId}` | Devuelve la imagen (`image/jpeg` o `image/png`). Solo el dueño del cobro o alguien con `pagos.validar`. La app la pide con `Authorization: Bearer`. |
+| GET | `/api/Billing/GetPendingUsers?page=1&pageSize=50&search=` | `{ userData: [{ userId, email, firstName, firstLastName, createdAt, dependentsCount }] }`, los más antiguos primero |
+| POST | `/api/Billing/ValidateUser` | `{ userId, enrollmentFee, monthlyFee }` → `{ billingData }` |
+| POST | `/api/Billing/UpdateUserFees` | `{ userId, enrollmentFee?, monthlyFee? }` → `{ billingData }` |
+| GET | `/api/Billing/GetUserBilling/{userId}` | `{ billingData }` |
 
-**Reglas de `UploadVoucher`:**
-- El cobro tiene que ser de un hijo **del usuario del token** (nunca confiar en ids del body). Si no → `39 COBRO NO EXISTE` (no revelar que existe).
-- Solo si el cobro está en `P` o `X`:
-  - Si está en `R` → `30 COBRO YA TIENE COMPROBANTE EN REVISION`.
-  - Si está en `A` → `30 COBRO YA PAGADO`.
-  - Si está en `C` → `39 COBRO NO EXISTE`.
-- Archivo:
-  - Tipo `image/jpeg` o `image/png`, verificado por los *magic bytes* y no solo por la extensión o el content-type.
-  - Máximo **5 MB**.
-  - Si no cumple → `30 ARCHIVO NO VALIDO` / `30 ARCHIVO DEMASIADO GRANDE`.
-  - La app ya comprime a 2000 px y calidad 85 %.
-- Guardar el archivo fuera de `wwwroot`, con nombre generado (GUID), nunca el nombre original. Guardar `file_key`, tipo y tamaño.
-- Con un solo lock o transacción: insertar el `payment_voucher` en `R` y pasar el cobro a `R`.
-- `reference`: máximo 60 caracteres, opcional.
-- Rate limit: reutilizar `AuthAttempts` o crear uno de ~10/min por usuario.
-
-`GetContactSettings`: si `whatsappNumber` está vacío, la app muestra "El club aún no configuró un número de contacto".
-
-### 4.3 Admin: cobros (`pagos.asignar`)
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| GET | `/api/Payment/GetChargeData?page=1&pageSize=100&status=P&search=sofi` | Todos los cobros, más recientes primero. `status` y `search` opcionales; `search` busca en nombre del hijo, del padre y concepto. `{ page, pageSize, hasNext, chargeData: Charge[] }` |
-| POST | `/api/Payment/ManageCharge` | Alta (`A`) o anulación (`D`), ver abajo. |
-| GET | `/api/Dependent/GetAllDependents?search=&page=1&pageSize=30` | Para elegir a qué hijo cobrar. `{ dependentData: [{ dependentId, firstName, firstLastName, categoryId, categoryName, parentName }] }`. Busca por nombre o CUI; solo hijos activos. Permiso `pagos.asignar`. |
-
-**Alta** a un hijo **o** a toda una categoría (exactamente uno de los dos):
+`billingData`:
 ```json
 {
-  "typeOperation": "A",
-  "chargeData": {
-    "concept": "Mensualidad de octubre",
-    "description": "Opcional",
-    "amount": 150.00,
-    "dueDate": "2026-10-15",
-    "categoryId": 3
-  }
+  "userId": "…",
+  "status": "A",
+  "enrollmentFee": 250.0,
+  "monthlyFee": 150.0,
+  "approvedBy": "Diego Alvarez",
+  "approvedAt": "…",
+  "solvent": false,
+  "overdueAmount": 150.0
 }
 ```
-o con `"dependentId": "d-1a…"` en lugar de `categoryId`.
 
-Respuesta: `{ "responseCode": "00", "createdCount": 12 }`.
-- Por categoría: un cobro por cada hijo **activo** de esa categoría, todos con el mismo `batch_id`, en una sola transacción. Si la categoría no tiene hijos, `createdCount: 0`; la app avisa, no es un error.
-- Validaciones:
-  - `concept` entre 1 y 100 caracteres.
-  - `description` hasta 250.
-  - `amount` mayor a 0 y hasta 100000, con 2 decimales.
-  - `dueDate` hoy o después (opcional).
-  - La categoría tiene que estar activa y el hijo existir y estar activo.
-- Guardar `users_id` = padre actual del hijo, para que el cobro no "salte" de dueño si luego cambia.
+Errores:
+- `39 USUARIO NO EXISTE`
+- `30 USUARIO YA VALIDADO`
+- `30 USUARIO NO REQUIERE VALIDACION` (exento)
+- `30 MONTO INVALIDO` (debe ser > 0 y ≤ 100000)
+- `30 INSCRIPCION YA PAGADA` (si se edita la inscripción con el cobro en `R` o `A`)
 
-**Anulación:**
-```json
-{ "typeOperation": "D", "chargeData": { "chargeId": "c-8f2…" } }
-```
-- Solo si está en `P`, `R` o `X`; si está en `A` → `30 NO SE PUEDE ANULAR UN COBRO PAGADO`.
-- Si tenía un comprobante en `R`, ese comprobante queda en `X` con comentario `"Cobro anulado por el club"`.
+### 3.3 Configuración
 
-### 4.4 Admin: validación (`pagos.validar`)
+| Método | Ruta | Permiso | Body / respuesta |
+|---|---|---|---|
+| GET | `/api/Settings/GetPaymentSettings` | cualquier usuario autenticado | `{ settingsData: { defaultEnrollmentFee, defaultMonthlyFee, dueDay, whatsappNumber, contactName } }` |
+| POST | `/api/Settings/UpdatePaymentSettings` | `configuracion.gestionar` | El mismo objeto; todos los campos son opcionales |
+
+Validaciones:
+- `dueDay` entre 1 y 28.
+- Los montos ≥ 0.
+- `whatsappNumber`: solo dígitos, entre 8 y 15, o vacío.
+- `contactName` hasta 60 caracteres.
+- Error: `30 CONFIGURACION INVALIDA`.
+
+### 3.4 Pagos del padre (`hijos.gestionar_propios` y perfil `A`)
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| GET | `/api/Payment/GetPendingReviews?page=1&pageSize=100` | Cobros en `R` con su `voucher`, `parentName` y `parentEmail`, **más antiguos primero**. `{ page, pageSize, hasNext, chargeData: Charge[] }` |
-| POST | `/api/Payment/ReviewVoucher` | Aprobar o rechazar, ver abajo. |
+| GET | `/api/Payment/GetMyCharges` | `{ chargeData: Charge[] }`, sin los anulados, del más reciente al más antiguo |
+| GET | `/api/Payment/GetMyBalance` | `{ balanceData: { solvent, totalOwed, overdueAmount, inReviewAmount, nextDueDate } }` |
+| POST | `/api/Payment/UploadVoucher` | multipart, ver abajo → `{ chargeData: Charge }` |
+| GET | `/api/Payment/GetVoucherFile/{voucherId}` | `image/webp`; solo el dueño o alguien con `pagos.validar` |
 
+`UploadVoucher` es `multipart/form-data` con:
+- `chargeId`, `amount` (con punto decimal), `bankReference`, `description` y `paymentDate`, todos obligatorios.
+- `ocrText` (opcional, hasta 4000 caracteres), `editSignals` (opcional, hasta 500).
+- `file`.
+
+Errores:
+- `39 COBRO NO EXISTE`
+- `30 COBRO YA TIENE COMPROBANTE EN REVISION`
+- `30 COBRO YA PAGADO`
+- `30 MONTO NO COINCIDE CON EL COBRO`
+- `30 REFERENCIA YA UTILIZADA`
+- `30 COMPROBANTE DUPLICADO`
+- `30 ARCHIVO NO VALIDO`
+- `30 ARCHIVO DEMASIADO GRANDE`
+- `30 FECHA DE PAGO INVALIDA`
+- `30 DATOS DEL COMPROBANTE INCOMPLETOS`
+- `03 PERFIL PENDIENTE DE VALIDACION`
+
+**`Charge`:**
 ```json
-{ "voucherId": "v-77…", "decision": "A" }
-{ "voucherId": "v-77…", "decision": "X", "comment": "El monto no coincide con el cobro." }
+{
+  "chargeId": "…", "userId": "…", "type": "M", "concept": "Mensualidad octubre 2026",
+  "period": "2026-10", "amount": 150.00, "dueDate": "2026-10-15",
+  "status": "P", "overdue": false, "createdAt": "…", "paidAt": null, "paidOnTime": null,
+  "parentName": "Luis Istacuy", "parentEmail": "…",
+  "voucher": {
+    "voucherId": "…", "status": "R", "uploadedAt": "…", "fileUrl": "/api/Payment/GetVoucherFile/…",
+    "amount": 150.00, "bankReference": "889231", "description": "…", "paymentDate": "2026-10-03",
+    "suspectedEdit": false, "editSignals": null,
+    "reviewComment": null, "reviewedAt": null, "reviewedBy": null
+  }
+}
 ```
-Respuesta: `{ chargeData: Charge }` actualizado.
-- `decision` es `A` (aprobar) o `X` (rechazar).
-- **`comment` obligatorio si `decision = X`**, entre 10 y 500 caracteres; si no → `30 COMENTARIO OBLIGATORIO`. Si es `A`, `comment` es opcional.
-- Solo si el comprobante está en `R`. Si ya se revisó → `30 COMPROBANTE YA REVISADO`, lo que evita que dos admins lo revisen a la vez. Usar `SELECT … FOR UPDATE`.
-- Aprobar: comprobante `A`, cobro `A` y `paid_datetime = NOW()`.
-- Rechazar: comprobante `X` con comentario, cobro `X`. El padre puede volver a subir.
-- Guardar `reviewed_by` y `review_datetime`. Opcionalmente, registrar un log de auditoría como el de `user_role_audit`.
+- `concept` lo arma la API: "Inscripción" o "Mensualidad {mes} {año}", con el mes en español.
+- `parentName` y `parentEmail` solo en los endpoints de admin.
+- `voucher` es el **último** comprobante, o `null` si no hay.
 
-### 4.5 Admin: configuración (`configuracion.gestionar`)
+### 3.5 Validación de comprobantes (`pagos.validar`)
 
-| Método | Ruta | Body / respuesta |
+| Método | Ruta | Descripción |
 |---|---|---|
-| POST | `/api/Payment/UpdateContactSettings` | `{ "whatsappNumber": "50255551234", "displayName": "Tesorería del club" }` → `{ settingsData: {...} }` |
+| GET | `/api/Payment/GetPendingReviews?page=1&pageSize=50` | Cobros en `R` con su `voucher`, `parentName` y `parentEmail`, los más antiguos primero |
+| POST | `/api/Payment/ReviewVoucher` | `{ voucherId, decision: "A" \| "X", comment? }` → `{ chargeData }`. Errores: `30 COMENTARIO OBLIGATORIO`, `30 COMPROBANTE YA REVISADO` |
 
-- `whatsappNumber`: solo dígitos con código de país, entre 8 y 15 dígitos; si no → `30 NUMERO DE WHATSAPP INVALIDO`. La API debe quitar `+`, espacios y guiones antes de validar.
-- `displayName`: opcional, hasta 60 caracteres.
-- `GetContactSettings` lo puede leer cualquier usuario autenticado.
+### 3.6 Gestión de pagos (`pagos.gestionar`)
 
----
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/Payment/GetChargeData?status=&type=&period=&search=&page=1&pageSize=50` | Todos los cobros → `{ chargeData, page, pageSize, hasNext }` |
+| POST | `/api/Payment/CancelCharge` | `{ chargeId }` → `{ chargeData }`. Si ya está pagado → `30 NO SE PUEDE ANULAR UN COBRO PAGADO`. Si tenía un comprobante en `R`, queda en `X` con el comentario "Cobro anulado por el club" |
+| GET | `/api/Payment/GetInsolventUsers?categoryId=&search=&page=1&pageSize=50` | `{ userData: [{ userId, name, email, overdueAmount, overdueCharges, oldestDueDate, lastReminderAt, dependents: [{ name, categoryId, categoryName }] }], page, pageSize, hasNext, totalRecords }`. `categoryId` filtra a los usuarios con al menos un hijo en esa categoría |
+| POST | `/api/Payment/NotifyInsolvents` | `{ userIds?: string[], message? }`. Con `userIds` en `null` notifica a todos los insolventes → `{ notifiedCount, skippedCount }` |
+| GET | `/api/Payment/GetSolvencyReport` | `{ reportData: { period, approvedUsers, solventUsers, insolventUsers, pendingValidationUsers, overdueAmount, collectedThisPeriod, inReviewAmount } }` |
 
-## 5. Mensajes de error
+### 3.7 Notificaciones (cualquier usuario autenticado, solo las suyas)
 
-La app traduce estos mensajes; si se usa otro, se muestra tal cual en formato de oración.
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/Notification/GetMyNotifications?page=1&pageSize=30&unreadOnly=false` | `{ notificationData: [{ notificationId, type, title, body, data, createdAt, readAt }], unreadCount, hasNext }` |
+| POST | `/api/Notification/MarkAsRead` | `{ notificationIds?: string[], all?: bool }` → `{ unreadCount }` |
 
-| Código | Mensaje |
-|---|---|
-| 39 | `COBRO NO EXISTE` |
-| 30 | `COBRO YA TIENE COMPROBANTE EN REVISION` |
-| 30 | `COBRO YA PAGADO` |
-| 30 | `NO SE PUEDE ANULAR UN COBRO PAGADO` |
-| 30 | `ARCHIVO NO VALIDO` |
-| 30 | `ARCHIVO DEMASIADO GRANDE` |
-| 30 | `COMENTARIO OBLIGATORIO` |
-| 30 | `COMPROBANTE YA REVISADO` |
-| 30 | `NUMERO DE WHATSAPP INVALIDO` |
-| 03 | `NO TIENE PERMISO PARA ESTA ACCION` (ya existe) |
+### 3.8 Jugadores (`jugadores.ver`; antes era solo SUPER_ADMIN)
+`GET /api/Dependent/GetDependentDataByCategory?categoryId=&search=&page=1&pageSize=100`
+- Se **agregan** a cada elemento: `dependentId`, `parentUserId`, `parentName` y `parentSolvent` (bool, o `null` si el padre está exento o pendiente).
+- `search` busca por nombre o CUI; `categoryId` es opcional.
 
----
-
-## 6. Seguridad (importante)
-
-- **Aislamiento del padre:** en `GetMyCharges`, `UploadVoucher` y `GetVoucherFile`, filtrar siempre por el `userId` del token. Un padre nunca debe poder ver ni subir a cobros de otra familia, aunque adivine un id.
-- **Archivos:**
-  - Validar los *magic bytes*, el tamaño y el tipo.
-  - No servirlos como estáticos; se sirven solo por `GetVoucherFile` con autorización, con `Content-Disposition: inline` y `X-Content-Type-Options: nosniff`.
-  - Opcional: reescalar o recomprimir en el servidor para quitar los metadatos EXIF.
-- **Montos:** `numeric`, nunca `float`. El monto lo define el admin; el padre nunca lo envía.
-- **Concurrencia:** índice único de un solo comprobante en `R` por cobro, y `FOR UPDATE` al revisar.
-- **Permisos:** en C# (`RequirePermission`) **y** en la función SQL (`fn_has_permission`), igual que roles y categorías.
+### 3.9 Roles
+- `Role/*`, `Permission/*`, `Role/UpdateRolePermissions` y `Role/GetRolePermissions`: **solo SUPER_ADMIN**. Con cualquier otro rol → `03`.
+- `User/UpdateUserRole` y `User/GetUserData`: se mantienen con `usuarios.gestionar` y `usuarios.ver`. Asignar el rol SUPER_ADMIN → `03 NO SE PUEDE ASIGNAR SUPER_ADMIN`.
+- `GetRolePermissions` devuelve el rol SUPER_ADMIN marcado; la app no lo ofrece para asignar.
 
 ---
 
-## 7. Checklist de pruebas sugerido
-
-- [ ] El padre A no ve ni puede subir a un cobro del padre B (tiene que responder `COBRO NO EXISTE`).
-- [ ] Subir con el cobro en `R` o `A` falla con el mensaje correcto.
-- [ ] Subir un PDF renombrado a `.jpg` → `ARCHIVO NO VALIDO`.
-- [ ] Rechazar sin comentario, o con menos de 10 caracteres → `COMENTARIO OBLIGATORIO`.
-- [ ] Dos admins aprueban el mismo comprobante a la vez: uno obtiene `COMPROBANTE YA REVISADO`.
-- [ ] Asignar a una categoría con N hijos activos crea N cobros; sin hijos, `createdCount: 0`.
-- [ ] Anular un cobro pagado falla; anular uno en revisión deja el comprobante en `X`.
-- [ ] Un usuario sin `pagos.validar` recibe 403 en `GetPendingReviews` y `ReviewVoucher`.
-- [ ] `GetVoucherFile` sin token → 401; de otra familia → 403 o 404.
-
----
-
-## 8. Extras opcionales (no bloquean la app)
-
-- **Notificaciones push** al padre cuando se aprueba o rechaza un comprobante, y al admin cuando llega uno nuevo.
-- **PDF de constancia de solvencia** firmado por el club: `GET /api/Payment/GetSolvencyCertificate?dependentId=`. La app ya muestra la solvencia en pantalla.
-- **Cobros recurrentes** (mensualidad automática por categoría el día 1).
+## 4. Seguridad
+- El padre solo ve lo suyo: se filtra siempre por el `userId` del token.
+- Los archivos se validan por *magic bytes* y se vuelven a codificar, y se sirven con `X-Content-Type-Options: nosniff`.
+- Al revisar y al generar cobros se usa `FOR UPDATE` y los índices únicos.
+- El OCR y las señales de edición que manda la app son **indicios**, no pruebas: el validador humano decide.

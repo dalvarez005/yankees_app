@@ -9,7 +9,7 @@ import '../../auth/presentation/widgets/auth_field.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
 import '../data/admin_repository.dart';
 
-/// Roles y sus permisos (requiere `roles.gestionar`).
+/// Roles y sus permisos: solo SUPER_ADMIN (la API lo valida por rol).
 class RolesPage extends StatefulWidget {
   const RolesPage({super.key, required this.user});
 
@@ -76,7 +76,7 @@ class _RolesPageState extends State<RolesPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.user.can(Permissions.rolesManage)) return const NoAccessView();
+    if (!widget.user.isSuperAdmin) return const NoAccessView();
     final roles = _roles;
     return Scaffold(
       appBar: pageAppBar(context, 'Roles y permisos'),

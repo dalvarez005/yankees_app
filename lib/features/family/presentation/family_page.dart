@@ -15,6 +15,8 @@ import '../../payments/data/payments_repository.dart';
 import '../../payments/presentation/charge_detail_page.dart';
 import '../../payments/presentation/charge_widgets.dart';
 import '../../payments/presentation/solvency_page.dart';
+import '../../billing/data/billing_models.dart';
+import '../../notifications/presentation/notifications_page.dart';
 
 /// Inicio del padre/madre/tutor: sus hijos registrados.
 class FamilyPage extends StatefulWidget {
@@ -36,7 +38,11 @@ class _FamilyPageState extends State<FamilyPage> {
   String? _error;
 
   /// null mientras carga o si falló (los hijos se muestran igual).
-  Balance? _balance;
+  AccountBalance? _balance;
+  List<Charge> _charges = const [];
+
+  /// Los exentos (admins) no tienen cobros: no se consulta el saldo.
+  bool get _hasPayments => _user.billing?.status != BillingStatus.notApplicable;
 
   @override
   void initState() {
@@ -68,9 +74,18 @@ class _FamilyPageState extends State<FamilyPage> {
 
   /// Si falla, la pantalla funciona igual sin el saldo.
   Future<void> _loadBalance() async {
+    if (!_hasPayments) return;
     try {
-      final charges = await PaymentsRepository.instance.myCharges();
-      if (mounted) setState(() => _balance = Balance(charges));
+      final repo = PaymentsRepository.instance;
+      final chargesFuture = repo.myCharges();
+      final balance = await repo.myBalance();
+      final charges = await chargesFuture;
+      if (mounted) {
+        setState(() {
+          _balance = balance;
+          _charges = charges;
+        });
+      }
     } on PaymentsException {
       // Sin saldo: se oculta la sección de pagos.
     }
@@ -87,7 +102,7 @@ class _FamilyPageState extends State<FamilyPage> {
     final b = _balance;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => b != null && b.solvent
+        builder: (_) => b != null && b.clear
             ? const SolvencyPage()
             : const MyPaymentsPage(),
       ),
@@ -95,15 +110,15 @@ class _FamilyPageState extends State<FamilyPage> {
     await _loadBalance();
   }
 
-  /// Lo más urgente primero: rechazados, vencidos, por pagar, en revisión.
+  /// Lo más urgente primero: vencidos, rechazados, por pagar, en revisión.
   List<Charge> get _urgent {
     int rank(Charge c) => switch (c.status) {
-      ChargeStatus.rejected => 0,
-      ChargeStatus.pending when c.overdue => 1,
+      _ when c.overdue => 0,
+      ChargeStatus.rejected => 1,
       ChargeStatus.pending => 2,
       _ => 3,
     };
-    return [...?_balance?.open]..sort((a, b) {
+    return [..._charges.where((c) => c.status.owes)]..sort((a, b) {
       final r = rank(a).compareTo(rank(b));
       if (r != 0) return r;
       return (a.dueDate ?? a.createdAt).compareTo(b.dueDate ?? b.createdAt);
@@ -215,7 +230,6 @@ class _FamilyPageState extends State<FamilyPage> {
         _DependentCard(
           dependent: d,
           categoryName: _categoryName(d),
-          owed: balance?.owedBy(d.id),
           onEdit: () => _openForm(d),
           onRemove: () => _confirmRemove(d),
         ),
@@ -240,6 +254,13 @@ class _FamilyPageState extends State<FamilyPage> {
         const SizedBox(height: 10),
       ],
     ];
+    final noKids = EmptyState(
+      icon: Icons.family_restroom_rounded,
+      title: 'Aún no registras a tus hijos',
+      message: 'Agrégalos con su CUI para inscribirlos en su categoría.',
+      actionLabel: 'Agregar hijo',
+      onAction: _openForm,
+    );
     final content = AsyncListView(
       loading: dependents == null,
       error: _error,
@@ -252,7 +273,9 @@ class _FamilyPageState extends State<FamilyPage> {
               summary: _summary,
               onProfile: _openProfile,
               balance: _balance,
+              showBalance: _hasPayments,
               onBalance: _openPayments,
+              onNotificationsChanged: _loadBalance,
             ),
       header: widget.embedded
           ? Padding(
@@ -263,15 +286,10 @@ class _FamilyPageState extends State<FamilyPage> {
               ),
             )
           : null,
-      empty: EmptyState(
-        icon: Icons.family_restroom_rounded,
-        title: 'Aún no registras a tus hijos',
-        message: 'Agrégalos con su CUI para ver sus pagos e inscripciones.',
-        actionLabel: 'Agregar hijo',
-        onAction: _openForm,
-      ),
+      empty: noKids,
       children: [
-        if (list.isNotEmpty) ...payments,
+        // Los cobros son por familia: se muestran aunque no haya hijos.
+        if (payments.isNotEmpty) ...[...payments, if (list.isEmpty) noKids],
         if (list.isNotEmpty) const ListHeader('Tus hijos'),
         ...list,
       ],
@@ -305,14 +323,18 @@ class _FamilyHeader extends StatelessWidget {
     required this.summary,
     required this.onProfile,
     required this.balance,
+    required this.showBalance,
     required this.onBalance,
+    required this.onNotificationsChanged,
   });
 
   final AppUser user;
   final String summary;
   final VoidCallback onProfile;
-  final Balance? balance;
+  final AccountBalance? balance;
+  final bool showBalance;
   final VoidCallback onBalance;
+  final VoidCallback onNotificationsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -350,6 +372,11 @@ class _FamilyHeader extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
+                  NotificationBell(
+                    user: user,
+                    onChanged: onNotificationsChanged,
+                  ),
+                  const SizedBox(width: 4),
                   Tooltip(
                     message: 'Mi perfil',
                     child: InkWell(
@@ -397,8 +424,10 @@ class _FamilyHeader extends StatelessWidget {
                   fontSize: 14,
                 ),
               ),
-              const SizedBox(height: 18),
-              BalanceHeaderCard(balance: balance, onTap: onBalance),
+              if (showBalance) ...[
+                const SizedBox(height: 18),
+                BalanceHeaderCard(balance: balance, onTap: onBalance),
+              ],
             ],
           ),
         ),
@@ -411,16 +440,12 @@ class _DependentCard extends StatelessWidget {
   const _DependentCard({
     required this.dependent,
     required this.categoryName,
-    required this.owed,
     required this.onEdit,
     required this.onRemove,
   });
 
   final Dependent dependent;
   final String categoryName;
-
-  /// Saldo pendiente del hijo; null si no se pudo consultar.
-  final double? owed;
   final VoidCallback onEdit;
   final VoidCallback onRemove;
 
@@ -434,7 +459,11 @@ class _DependentCard extends StatelessWidget {
         size: 50,
       ),
       title: dependent.fullName,
-      subtitle: 'CUI ${dependent.formattedCui}',
+      subtitle: [
+        if (dependent.age != null)
+          dependent.age == 1 ? '1 año' : '${dependent.age} años',
+        'CUI ${dependent.formattedCui}',
+      ].join(' · '),
       footer: Wrap(
         spacing: 6,
         runSpacing: 6,
@@ -444,18 +473,6 @@ class _DependentCard extends StatelessWidget {
             tone: PillTone.brand,
             icon: Icons.sports_baseball_outlined,
           ),
-          if (owed != null)
-            owed! > 0
-                ? Pill(
-                    'Debe ${formatMoney(owed!)}',
-                    tone: PillTone.warning,
-                    icon: Icons.schedule_rounded,
-                  )
-                : const Pill(
-                    'Solvente',
-                    tone: PillTone.success,
-                    icon: Icons.verified_rounded,
-                  ),
         ],
       ),
       trailing: PopupMenuButton<String>(
@@ -478,7 +495,7 @@ class _DependentCard extends StatelessWidget {
 class _EmbeddedBalance extends StatelessWidget {
   const _EmbeddedBalance({required this.balance, required this.onTap});
 
-  final Balance balance;
+  final AccountBalance balance;
   final VoidCallback onTap;
 
   @override
@@ -486,13 +503,26 @@ class _EmbeddedBalance extends StatelessWidget {
     onTap: onTap,
     leading: AppAvatar(
       seed: 'saldo',
-      icon: balance.solvent
+      icon: balance.clear
           ? Icons.verified_rounded
-          : Icons.account_balance_wallet_outlined,
+          : balance.solvent
+          ? Icons.account_balance_wallet_outlined
+          : Icons.warning_amber_rounded,
     ),
-    title: balance.solvent ? 'Solvente' : formatMoney(balance.totalOwed),
-    subtitle: balance.solvent
+    title: balance.clear
+        ? 'Solvente'
+        : balance.solvent
+        ? formatMoney(balance.totalOwed)
+        : 'INSOLVENTE · ${formatMoney(balance.overdueAmount)} vencido',
+    subtitle: balance.clear
         ? 'Estás al día con el club'
-        : 'Saldo pendiente · toca para ver tus pagos',
+        : 'Toca para ver tus pagos',
+    footer: balance.solvent
+        ? null
+        : const Pill(
+            'Pago vencido',
+            tone: PillTone.danger,
+            icon: Icons.warning_amber_rounded,
+          ),
   );
 }

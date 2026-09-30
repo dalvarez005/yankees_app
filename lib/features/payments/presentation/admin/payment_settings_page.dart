@@ -9,11 +9,14 @@ import '../../../../core/widgets/feedback.dart';
 import '../../../auth/data/app_user.dart';
 import '../../../auth/presentation/widgets/auth_field.dart';
 import '../../../auth/presentation/widgets/loading_button.dart';
+import '../../../../core/widgets/money_field.dart';
 import '../../data/payment_models.dart';
 import '../../data/payments_repository.dart';
+import '../../data/settings_repository.dart';
 
-/// Número de WhatsApp al que escriben los padres cuando les rechazan un
-/// comprobante (requiere `configuracion.gestionar`).
+/// Configuración de pagos (requiere `configuracion.gestionar`): cuotas
+/// sugeridas al validar usuarios, día límite de pago y el WhatsApp al que
+/// escriben los padres.
 class PaymentSettingsPage extends StatefulWidget {
   const PaymentSettingsPage({super.key, required this.user});
 
@@ -28,6 +31,9 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
   final _country = TextEditingController(text: '502');
   final _number = TextEditingController();
   final _name = TextEditingController();
+  final _enrollment = TextEditingController();
+  final _monthly = TextEditingController();
+  int _dueDay = 15;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -43,6 +49,8 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
     _country.dispose();
     _number.dispose();
     _name.dispose();
+    _enrollment.dispose();
+    _monthly.dispose();
     super.dispose();
   }
 
@@ -52,8 +60,11 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
       _error = null;
     });
     try {
-      final c = await PaymentsRepository.instance.contact();
+      final c = await SettingsRepository.instance.paymentSettings();
       if (!mounted) return;
+      _enrollment.text = moneyText(c.defaultEnrollmentFee);
+      _monthly.text = moneyText(c.defaultMonthlyFee);
+      _dueDay = c.dueDay.clamp(1, 28);
       // Guatemala por defecto: 502 + 8 dígitos.
       final digits = c.whatsappNumber;
       if (digits.length > 8) {
@@ -62,7 +73,7 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
       } else {
         _number.text = digits;
       }
-      _name.text = c.displayName ?? '';
+      _name.text = c.contactName ?? '';
       setState(() => _loading = false);
     } on PaymentsException catch (e) {
       if (mounted) {
@@ -74,19 +85,25 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
     }
   }
 
-  String get _full => '${_country.text.trim()}${_number.text.trim()}';
+  /// Vacío si no se escribió número (se permite: sin contacto).
+  String get _full => _number.text.trim().isEmpty
+      ? ''
+      : '${_country.text.trim()}${_number.text.trim()}';
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     try {
-      await PaymentsRepository.instance.updateContact(
-        PaymentContact(
+      await SettingsRepository.instance.updatePaymentSettings(
+        PaymentSettings(
+          defaultEnrollmentFee: parseMoney(_enrollment.text) ?? 0,
+          defaultMonthlyFee: parseMoney(_monthly.text) ?? 0,
+          dueDay: _dueDay,
           whatsappNumber: _full,
-          displayName: _name.text.trim().isEmpty ? null : _name.text.trim(),
+          contactName: _name.text.trim().isEmpty ? null : _name.text.trim(),
         ),
       );
-      if (mounted) showAppMessage(context, 'Contacto guardado.');
+      if (mounted) showAppMessage(context, 'Configuración guardada.');
     } on PaymentsException catch (e) {
       if (mounted) showAppMessage(context, e.message, error: true);
     } finally {
@@ -96,6 +113,10 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
 
   Future<void> _test() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_full.isEmpty) {
+      showAppMessage(context, 'Escribe primero el número.', info: true);
+      return;
+    }
     final ok = await openWhatsApp(
       _full,
       message: 'Prueba de contacto desde la app del Club Yankees.',
@@ -111,7 +132,7 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
       return const NoAccessView();
     }
     return Scaffold(
-      appBar: pageAppBar(context, 'Contacto de pagos'),
+      appBar: pageAppBar(context, 'Configuración de pagos'),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.navy),
@@ -123,6 +144,48 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
                 children: [
+                  const ListHeader('Cuotas sugeridas'),
+                  const Text(
+                    'Se proponen al validar a un usuario nuevo; se pueden '
+                    'cambiar para cada familia.',
+                    style: TextStyle(color: AppColors.textMuted),
+                  ),
+                  const SizedBox(height: 14),
+                  MoneyField(
+                    label: 'Inscripción',
+                    controller: _enrollment,
+                    allowZero: true,
+                  ),
+                  const SizedBox(height: 16),
+                  MoneyField(
+                    label: 'Mensualidad',
+                    controller: _monthly,
+                    allowZero: true,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<int>(
+                    initialValue: _dueDay,
+                    decoration: const InputDecoration(
+                      labelText: 'Día límite de pago',
+                      prefixIcon: Icon(Icons.event_rounded, size: 20),
+                    ),
+                    items: [
+                      for (var d = 1; d <= 28; d++)
+                        DropdownMenuItem(value: d, child: Text('Día $d')),
+                    ],
+                    onChanged: (v) => setState(() => _dueDay = v ?? _dueDay),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'La mensualidad vence el día $_dueDay de cada mes y la '
+                    'inscripción $_dueDay días después de validar al usuario.',
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  const ListHeader('Contacto por WhatsApp'),
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -163,7 +226,10 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
                             LengthLimitingTextInputFormatter(3),
                           ],
                           validator: (v) =>
-                              (v ?? '').isEmpty ? 'Requerido' : null,
+                              _number.text.trim().isNotEmpty &&
+                                  (v ?? '').isEmpty
+                              ? 'Requerido'
+                              : null,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -178,15 +244,20 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
                             FilteringTextInputFormatter.digitsOnly,
                             LengthLimitingTextInputFormatter(12),
                           ],
-                          validator: (v) =>
-                              (v ?? '').length < 8 ? 'Mínimo 8 dígitos' : null,
+                          validator: (v) {
+                            final n = v ?? '';
+                            if (n.isEmpty) return null; // Sin contacto.
+                            if (n.length < 8) return 'Mínimo 8 dígitos';
+                            if (_full.length > 15) return 'Máximo 15 en total';
+                            return null;
+                          },
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
                   AuthField(
-                    label: 'Nombre a mostrar (opcional)',
+                    label: 'Nombre del contacto',
                     hint: 'Ej. Tesorería del club',
                     icon: Icons.badge_outlined,
                     controller: _name,

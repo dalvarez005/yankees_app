@@ -30,8 +30,4 @@ class Env {
 
   /// `--dart-define=USE_MOCK=true` para trabajar sin API.
   static const useMock = bool.fromEnvironment('USE_MOCK');
-
-  /// Pagos contra la API (`--dart-define=PAYMENTS_API=true`). Mientras el
-  /// módulo no exista en la API se usan datos simulados en memoria.
-  static const paymentsApi = bool.fromEnvironment('PAYMENTS_API');
 }

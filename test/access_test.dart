@@ -13,6 +13,8 @@ import 'package:yankees/features/admin/presentation/admin_home_page.dart';
 import 'package:yankees/features/auth/data/app_user.dart';
 import 'package:yankees/features/categories/data/category_repository.dart';
 import 'package:yankees/features/family/data/dependent_repository.dart';
+import 'package:yankees/features/billing/data/billing_repository.dart';
+import 'package:yankees/features/notifications/data/notification_repository.dart';
 import 'package:yankees/features/payments/data/payments_repository.dart';
 
 AppUser _user(Set<String> permissions, [String role = 'X']) => AppUser(
@@ -30,13 +32,30 @@ void main() {
       expect(_user({Permissions.ownDependents}).isAdmin, isFalse);
       expect(_user({Permissions.usersView}).isAdmin, isTrue);
       expect(_user({Permissions.categoriesManage}).isAdmin, isTrue);
+      expect(_user({Permissions.playersView}).isAdmin, isTrue);
+      expect(_user({Permissions.paymentsManage}).isAdmin, isTrue);
+    });
+
+    test('catálogo final de permisos (contrato v2)', () {
+      expect(Permissions.admin, {
+        'usuarios.ver',
+        'usuarios.gestionar',
+        'usuarios.validar',
+        'categorias.gestionar',
+        'jugadores.ver',
+        'pagos.validar',
+        'pagos.gestionar',
+        'configuracion.gestionar',
+      });
+      expect(Permissions.admin, isNot(contains('roles.gestionar')));
+      expect(Permissions.admin, isNot(contains('pagos.asignar')));
     });
 
     test('rol y permisos sobreviven al guardado de la sesión', () {
-      final u = _user({Permissions.rolesManage}, 'Secretaría');
+      final u = _user({Permissions.usersValidate}, 'Secretaría');
       final back = AppUser.fromJson(jsonDecode(jsonEncode(u.toJson())));
       expect(back.roleName, 'Secretaría');
-      expect(back.can(Permissions.rolesManage), isTrue);
+      expect(back.can(Permissions.usersValidate), isTrue);
     });
 
     test('sesiones guardadas antes de los permisos no rompen', () {
@@ -63,13 +82,23 @@ void main() {
       DependentRepository.instance = MockDependentRepository(
         latency: Duration.zero,
       );
+      BillingRepository.instance = MockBillingRepository(
+        latency: Duration.zero,
+      );
+      NotificationRepository.instance = MockNotificationRepository(
+        latency: Duration.zero,
+      );
     });
 
-    Future<void> pump(WidgetTester tester, Set<String> perms) async {
+    Future<void> pump(
+      WidgetTester tester,
+      Set<String> perms, [
+      String role = 'SUPER_ADMIN',
+    ]) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
-          home: AdminHomePage(user: _user(perms, 'SUPER_ADMIN')),
+          home: AdminHomePage(user: _user(perms, role)),
         ),
       );
       await tester.pumpAndSettle();
@@ -78,18 +107,68 @@ void main() {
     testWidgets('super admin ve todo', (tester) async {
       await pump(tester, {...Permissions.admin, Permissions.ownDependents});
       for (final s in [
+        'Validar pagos',
+        'Usuarios por validar',
+        'Insolventes',
+        'Cobros',
         'Usuarios',
         'Roles y permisos',
         'Categorías',
+        'Jugadores',
+        'Configuración',
         'Mi familia',
       ]) {
         expect(find.text(s), findsWidgets, reason: s);
       }
       expect(find.text('Super admin'), findsOneWidget);
+      // Estadísticas de lo pendiente.
+      expect(find.text('Por validar'), findsOneWidget);
+      expect(find.text('Usuarios pendientes'), findsOneWidget);
+      expect(find.text('Asignar cobro'), findsNothing);
+    });
+
+    testWidgets('roles y permisos: solo el super admin', (tester) async {
+      await pump(tester, {...Permissions.admin}, 'Tesorería');
+      expect(find.text('Roles y permisos'), findsNothing);
+      expect(find.text('Insolventes'), findsWidgets);
+    });
+
+    testWidgets('solo validar pagos', (tester) async {
+      await pump(tester, {Permissions.paymentsReview}, 'Validador');
+      expect(find.text('Validar pagos'), findsOneWidget);
+      expect(find.text('Cobros'), findsNothing);
+      expect(find.text('Insolventes'), findsNothing);
+      expect(find.text('Usuarios por validar'), findsNothing);
+      expect(find.text('Jugadores'), findsNothing);
+    });
+
+    testWidgets('jugadores con jugadores.ver (ya no solo super admin)', (
+      tester,
+    ) async {
+      await pump(tester, {Permissions.playersView}, 'Entrenador');
+      expect(find.text('Jugadores'), findsOneWidget);
+      expect(find.text('Usuarios'), findsNothing);
+    });
+
+    testWidgets('la campana muestra las notificaciones sin leer', (
+      tester,
+    ) async {
+      await pump(tester, {Permissions.paymentsReview}, 'Validador');
+      // El mock trae 2 sin leer.
+      expect(find.text('2'), findsOneWidget);
+      await tester.tap(find.byTooltip('Notificaciones (2 sin leer)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Nuevo comprobante'), findsOneWidget);
+      await tester.tap(find.text('Marcar leídas'));
+      await tester.pumpAndSettle();
+      expect(find.text('Nueva'), findsNothing);
     });
 
     testWidgets('rol que solo gestiona usuarios', (tester) async {
-      await pump(tester, {Permissions.usersView, Permissions.usersManage});
+      await pump(tester, {
+        Permissions.usersView,
+        Permissions.usersManage,
+      }, 'Secretaría');
       expect(find.text('Usuarios'), findsOneWidget);
       expect(find.text('Roles y permisos'), findsNothing);
       expect(find.text('Categorías'), findsNothing);
@@ -97,7 +176,7 @@ void main() {
     });
 
     testWidgets('rol sin permisos avisa', (tester) async {
-      await pump(tester, {});
+      await pump(tester, {}, 'Invitado');
       expect(
         find.textContaining('no tiene permisos asignados'),
         findsOneWidget,
@@ -174,7 +253,7 @@ void main() {
               'roleId': 2,
               'roleName': 'SUPER_ADMIN',
               'status': 'A',
-              'permissions': ['roles.gestionar'],
+              'permissions': ['usuarios.ver'],
               'userCount': 1,
             },
             {'roleId': 5, 'roleName': 'Viejo', 'status': 'I'},

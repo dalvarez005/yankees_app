@@ -6,6 +6,7 @@ import '../../../core/widgets/app_ui.dart';
 import '../../../core/widgets/feedback.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
+import '../../billing/presentation/pending_users_page.dart';
 import '../data/admin_repository.dart';
 
 /// Usuarios con su rol y estado. Ver requiere `usuarios.ver`; cambiar rol o
@@ -69,6 +70,7 @@ class _UsersPageState extends State<UsersPage> {
         user: u,
         roles: _roles,
         canManage: _canManage,
+        canValidate: widget.user.can(Permissions.usersValidate),
         isSelf: u.id == widget.user.id,
       ),
     );
@@ -204,12 +206,16 @@ class _UserSheet extends StatefulWidget {
     required this.roles,
     required this.canManage,
     required this.isSelf,
+    this.canValidate = false,
   });
 
   final ManagedUser user;
   final List<Role> roles;
   final bool canManage;
   final bool isSelf;
+
+  /// Ver y editar sus cuotas (`usuarios.validar`).
+  final bool canValidate;
 
   @override
   State<_UserSheet> createState() => _UserSheetState();
@@ -258,8 +264,16 @@ class _UserSheetState extends State<_UserSheet> {
   Widget build(BuildContext context) {
     final u = widget.user;
     final roleChanged = _roleId != null && _roleId != u.roleId;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+    // SUPER_ADMIN se define solo por base de datos: no se ofrece.
+    final roles = [...widget.roles.where((r) => !r.isSuperAdmin)];
+    final protected = u.roleName?.toUpperCase() == 'SUPER_ADMIN';
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        0,
+        24,
+        24 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -316,17 +330,21 @@ class _UserSheetState extends State<_UserSheet> {
               'otro administrador.',
               style: TextStyle(color: AppColors.textMuted),
             )
+          else if (protected)
+            const Text(
+              'El super admin se define solo desde la base de datos; no se '
+              'modifica desde la app.',
+              style: TextStyle(color: AppColors.textMuted),
+            )
           else ...[
             DropdownButtonFormField<int>(
-              initialValue: widget.roles.any((r) => r.id == _roleId)
-                  ? _roleId
-                  : null,
+              initialValue: roles.any((r) => r.id == _roleId) ? _roleId : null,
               decoration: const InputDecoration(
                 labelText: 'Rol',
                 prefixIcon: Icon(Icons.badge_outlined, size: 20),
               ),
               items: [
-                for (final r in widget.roles)
+                for (final r in roles)
                   DropdownMenuItem(value: r.id, child: Text(roleLabel(r.name))),
               ],
               onChanged: _saving ? null : (v) => setState(() => _roleId = v),
@@ -353,6 +371,10 @@ class _UserSheetState extends State<_UserSheet> {
                 u.active ? 'Desactivar usuario' : 'Reactivar usuario',
               ),
             ),
+          ],
+          if (widget.canValidate && u.active) ...[
+            const SizedBox(height: 20),
+            UserFeesSection(userId: u.id, name: u.name, email: u.email),
           ],
         ],
       ),

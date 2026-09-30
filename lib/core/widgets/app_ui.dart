@@ -272,11 +272,15 @@ class ListCard extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.dimmed = false,
+    this.subtitleLines = 1,
   });
 
   final Widget leading;
   final String title;
   final String? subtitle;
+
+  /// Líneas visibles del detalle (se corta con "…").
+  final int subtitleLines;
 
   /// Fila extra debajo (pills, progreso…).
   final Widget? footer;
@@ -324,7 +328,7 @@ class ListCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           subtitle!,
-                          maxLines: 1,
+                          maxLines: subtitleLines,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: AppColors.textMuted,

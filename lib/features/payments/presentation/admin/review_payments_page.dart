@@ -8,15 +8,19 @@ import '../../../../core/widgets/feedback.dart';
 import '../../../auth/data/app_user.dart';
 import '../../data/payment_models.dart';
 import '../../data/payments_repository.dart';
+import '../charge_detail_page.dart';
 import '../charge_widgets.dart';
 import '../voucher_image.dart';
 
 /// Comprobantes esperando validación (requiere `pagos.validar`), del más
 /// antiguo al más reciente.
 class ReviewPaymentsPage extends StatefulWidget {
-  const ReviewPaymentsPage({super.key, required this.user});
+  const ReviewPaymentsPage({super.key, required this.user, this.openChargeId});
 
   final AppUser user;
+
+  /// Abre directo ese cobro (desde una notificación).
+  final String? openChargeId;
 
   @override
   State<ReviewPaymentsPage> createState() => _ReviewPaymentsPageState();
@@ -25,6 +29,7 @@ class ReviewPaymentsPage extends StatefulWidget {
 class _ReviewPaymentsPageState extends State<ReviewPaymentsPage> {
   List<Charge>? _queue;
   String? _error;
+  late String? _autoOpen = widget.openChargeId;
 
   @override
   void initState() {
@@ -36,7 +41,11 @@ class _ReviewPaymentsPageState extends State<ReviewPaymentsPage> {
     setState(() => _error = null);
     try {
       final queue = await PaymentsRepository.instance.reviewQueue();
-      if (mounted) setState(() => _queue = queue);
+      if (!mounted) return;
+      setState(() => _queue = queue);
+      final target = queue.where((c) => c.id == _autoOpen).firstOrNull;
+      _autoOpen = null;
+      if (target != null) await _open(target);
     } on PaymentsException catch (e) {
       if (mounted) setState(() => _error = e.message);
     }
@@ -155,6 +164,10 @@ class _ReviewVoucherPageState extends State<ReviewVoucherPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
+          if (v != null && v.suspectedEdit) ...[
+            _EditWarning(signals: v.editSignalList),
+            const SizedBox(height: 12),
+          ],
           if (v != null) VoucherImage(voucher: v, height: 320),
           const SizedBox(height: 16),
           Container(
@@ -189,15 +202,31 @@ class _ReviewVoucherPageState extends State<ReviewVoucherPage> {
                   ],
                 ),
                 const Divider(height: 24, color: AppColors.border),
-                _Row('Hijo', [c.dependentName, ?c.categoryName].join(' · ')),
                 if (c.parentName != null) _Row('Padre/madre', c.parentName!),
                 if (c.parentEmail != null) _Row('Correo', c.parentEmail!),
-                if (v != null) _Row('Enviado', formatDateTime(v.uploadedAt)),
-                _Row('Referencia', v?.reference ?? 'No indicó'),
-                if (c.dueDate != null) _Row('Vencía', formatDate(c.dueDate!)),
+                _Row(
+                  'Tipo',
+                  [
+                    c.type.label,
+                    if (c.period != null) formatPeriod(c.period!),
+                  ].join(' · '),
+                ),
+                if (c.dueDate != null) _Row('Vence', formatDate(c.dueDate!)),
+                if (v != null && c.dueDate != null)
+                  _Row(
+                    'A tiempo',
+                    daysUntil(c.dueDate!, now: v.uploadedAt) >= 0
+                        ? 'Sí, subido antes del vencimiento'
+                        : 'No, subido después del vencimiento',
+                  ),
               ],
             ),
           ),
+          if (v != null) ...[
+            const SizedBox(height: 16),
+            const ListHeader('Datos del comprobante'),
+            VoucherDetails(voucher: v, chargeAmount: c.amount),
+          ],
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -246,6 +275,54 @@ class _ReviewVoucherPageState extends State<ReviewVoucherPage> {
       ),
     );
   }
+}
+
+/// Advertencia visible: la foto podría estar editada (no es prueba).
+class _EditWarning extends StatelessWidget {
+  const _EditWarning({required this.signals});
+  final List<String> signals;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: AppColors.error.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.error),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Posible imagen editada',
+                style: TextStyle(
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        for (final s in signals)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text('• $s', style: const TextStyle(fontSize: 13)),
+          ),
+        const SizedBox(height: 6),
+        const Text(
+          'Son indicios, no pruebas: verifica el depósito en el banco antes '
+          'de aprobar.',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),
+        ),
+      ],
+    ),
+  );
 }
 
 class _Row extends StatelessWidget {
@@ -354,6 +431,7 @@ class _RejectSheetState extends State<_RejectSheet> {
                 final t = v?.trim() ?? '';
                 if (t.isEmpty) return 'El motivo es obligatorio';
                 if (t.length < 10) return 'Explica un poco más (mín. 10)';
+                if (t.length > 500) return 'Máximo 500 caracteres';
                 return null;
               },
             ),

@@ -1,4 +1,5 @@
 import '../../../core/access/permissions.dart';
+import '../../billing/data/billing_models.dart';
 
 class AppUser {
   const AppUser({
@@ -10,6 +11,7 @@ class AppUser {
     this.permissions = const {},
     this.secondName,
     this.secondLastName,
+    this.billing,
   });
 
   final String id;
@@ -22,6 +24,10 @@ class AppUser {
   /// Rol y permisos vienen de `GET /api/User/me` (campo `access`).
   final String roleName;
   final Set<String> permissions;
+
+  /// Perfil de cobro (`billing` de `/me`). null en sesiones guardadas antes
+  /// de que existiera o si la API no lo manda: se trata como validado.
+  final Billing? billing;
 
   /// Nombre corto para saludos: primer nombre y primer apellido.
   String get fullName => '$firstName $firstLastName'.trim();
@@ -51,6 +57,14 @@ class AppUser {
   /// Entra al panel de administración (tiene algún permiso de admin).
   bool get isAdmin => permissions.any(Permissions.admin.contains);
 
+  /// Algunos endpoints de la API exigen el rol SUPER_ADMIN (no un permiso).
+  bool get isSuperAdmin => roleName.trim().toUpperCase() == 'SUPER_ADMIN';
+
+  /// Padre recién registrado que el club aún no valida: ve "Estamos
+  /// configurando tu perfil". Los administradores están exentos.
+  bool get awaitingValidation =>
+      !isAdmin && !isSuperAdmin && (billing?.pending ?? false);
+
   /// Mismo usuario con otro rol/permisos (tras releer el perfil).
   AppUser withAccess({
     required String roleName,
@@ -64,6 +78,7 @@ class AppUser {
     secondLastName: secondLastName,
     roleName: roleName,
     permissions: permissions,
+    billing: billing,
   );
 
   Map<String, dynamic> toJson() => {
@@ -75,6 +90,7 @@ class AppUser {
     'secondLastName': secondLastName,
     'roleName': roleName,
     'permissions': permissions.toList(),
+    if (billing != null) 'billing': billing!.toJson(),
   };
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
@@ -86,5 +102,8 @@ class AppUser {
     secondLastName: json['secondLastName'] as String?,
     roleName: json['roleName'] as String? ?? '',
     permissions: {...?(json['permissions'] as List?)?.cast<String>()},
+    billing: json['billing'] is Map<String, dynamic>
+        ? Billing.fromJson(json['billing'] as Map<String, dynamic>)
+        : null,
   );
 }

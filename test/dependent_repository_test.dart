@@ -35,6 +35,7 @@ void main() {
     secondName: '',
     firstLastName: 'Castro',
     categoryId: 2,
+    age: 8,
   );
 
   Map<String, dynamic> dependentJson() => {
@@ -47,6 +48,7 @@ void main() {
     'secondLastName': null,
     'categoryId': 2,
     'status': 'A',
+    'age': 9,
   };
 
   test('list hace GET GetDependentDataForUser y mapea los hijos', () async {
@@ -63,6 +65,7 @@ void main() {
     expect(items.single.fullName, 'Sofía Castro');
     expect(items.single.formattedCui, '1234 56789 0101');
     expect(items.single.categoryId, 2);
+    expect(items.single.age, 9);
   });
 
   test('list vacía', () async {
@@ -90,6 +93,7 @@ void main() {
         'firstName': 'Sofía',
         'firstLastName': 'Castro',
         'categoryId': 2,
+        'age': 8,
       },
     });
     expect(created.id, 'd-1');

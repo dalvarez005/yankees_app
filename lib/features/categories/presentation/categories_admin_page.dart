@@ -58,6 +58,17 @@ class _CategoriesAdminPageState extends State<CategoriesAdminPage> {
     await _load();
   }
 
+  Future<void> _reactivate(Category c) async {
+    try {
+      await CategoryRepository.instance.reactivate(c.id);
+      if (!mounted) return;
+      showAppMessage(context, '"${c.name}" está activa de nuevo.');
+      await _load();
+    } on CategoryException catch (e) {
+      if (mounted) showAppMessage(context, e.message, error: true);
+    }
+  }
+
   Future<void> _deactivate(Category c) async {
     final ok = await confirmAction(
       context,
@@ -122,7 +133,8 @@ class _CategoriesAdminPageState extends State<CategoriesAdminPage> {
             if (inactive.isNotEmpty) ...[
               const SizedBox(height: 10),
               ListHeader('Inactivas', count: inactive.length),
-              for (final c in inactive) _CategoryTile(category: c),
+              for (final c in inactive)
+                _CategoryTile(category: c, onReactivate: () => _reactivate(c)),
             ],
           ],
         ),
@@ -132,13 +144,19 @@ class _CategoriesAdminPageState extends State<CategoriesAdminPage> {
 }
 
 class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({required this.category, this.onEdit, this.onDeactivate});
+  const _CategoryTile({
+    required this.category,
+    this.onEdit,
+    this.onDeactivate,
+    this.onReactivate,
+  });
 
   final Category category;
 
   /// null en las inactivas: la API no las edita.
   final VoidCallback? onEdit;
   final VoidCallback? onDeactivate;
+  final VoidCallback? onReactivate;
 
   @override
   Widget build(BuildContext context) {
@@ -156,9 +174,13 @@ class _CategoryTile extends StatelessWidget {
           ? 'Disponible para inscribir hijos'
           : 'No se ofrece a hijos nuevos',
       trailing: onEdit == null
-          ? const Padding(
-              padding: EdgeInsets.only(right: 10),
-              child: Pill('Inactiva'),
+          ? Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: TextButton.icon(
+                onPressed: onReactivate,
+                icon: const Icon(Icons.restore_rounded, size: 18),
+                label: const Text('Reactivar'),
+              ),
             )
           : PopupMenuButton<String>(
               tooltip: 'Opciones',

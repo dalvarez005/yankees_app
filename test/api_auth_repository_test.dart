@@ -9,6 +9,7 @@ import 'package:yankees/core/session/session_store.dart';
 import 'package:yankees/features/auth/data/api_auth_repository.dart';
 import 'package:yankees/features/auth/data/auth_repository.dart';
 import 'package:yankees/features/auth/data/google_id_token_provider.dart';
+import 'package:yankees/features/billing/data/billing_models.dart';
 
 class _FakeGoogle implements GoogleIdTokenProvider {
   _FakeGoogle(this.token);
@@ -126,7 +127,7 @@ void main() {
       expect(sentBody(), {
         'typeOperation': 'A',
         'userData': {
-          'username': 'ana@test.com',
+          'username': 'ana',
           'email': 'ana@test.com',
           'password': 'clave123',
           'firstName': 'Ana',
@@ -286,7 +287,7 @@ void main() {
 
       expect(requests.first.url.path, '/api/Auth/signin-password');
       expect(requests.first.headers.containsKey('Authorization'), isFalse);
-      expect(sentBody(), {'username': 'ana@test.com', 'password': 'x1y2z3'});
+      expect(sentBody(), {'email': 'ana@test.com', 'password': 'x1y2z3'});
       expect(requests.last.method, 'GET');
       expect(requests.last.url.path, '/api/User/me');
       expect(requests.last.headers['Authorization'], 'Bearer jwt-pw');
@@ -294,6 +295,56 @@ void main() {
       expect(user.displayName, 'Ana Gómez');
       expect(store.session!.refreshToken, 'rt-pw');
       expect(store.session!.user.fullName, 'Ana Gómez');
+    });
+
+    test('/me trae el perfil de cobro y se guarda en la sesión', () async {
+      final r = repo(
+        (req) => req.url.path == '/api/User/me'
+            ? json({
+                ...profileOk(),
+                'access': {
+                  'roleName': 'USER_BASE',
+                  'permissions': ['hijos.gestionar_propios'],
+                },
+                'billing': {
+                  'status': 'P',
+                  'enrollmentFee': null,
+                  'monthlyFee': null,
+                  'solvent': true,
+                  'overdueAmount': 0,
+                },
+              })
+            : json(loginOk()),
+      );
+      final user = await r.signIn(email: 'ana@test.com', password: 'x1y2z3');
+      expect(user.billing!.status, BillingStatus.pending);
+      expect(user.awaitingValidation, isTrue);
+      expect(store.session!.user.billing!.status, BillingStatus.pending);
+
+      // Una vez validado, /me lo refleja y ya no espera.
+      final validated = repo(
+        (req) => req.url.path != '/api/User/me'
+            ? json(loginOk())
+            : json({
+                ...profileOk(),
+                'access': {
+                  'roleName': 'USER_BASE',
+                  'permissions': ['hijos.gestionar_propios'],
+                },
+                'billing': {
+                  'status': 'A',
+                  'enrollmentFee': 250.0,
+                  'monthlyFee': 150.0,
+                  'solvent': false,
+                  'overdueAmount': 150.0,
+                },
+              }),
+      );
+      final u2 = await validated.signIn(email: 'ana@test.com', password: 'x');
+      expect(u2.awaitingValidation, isFalse);
+      expect(u2.billing!.monthlyFee, 150);
+      expect(u2.billing!.solvent, isFalse);
+      expect(u2.billing!.overdueAmount, 150);
     });
 
     test('si /me falla igual entra y muestra el correo', () async {
@@ -537,6 +588,65 @@ void main() {
           ),
         ),
       );
+    });
+  });
+
+  group('username para la API (sin @)', () {
+    test('se toma la parte antes de la arroba', () {
+      expect(
+        ApiAuthRepository.usernameFor(' Juan.Perez@Gmail.com '),
+        'juan.perez',
+      );
+      expect(ApiAuthRepository.usernameFor('${'a' * 60}@x.com'), hasLength(50));
+    });
+
+    test('si ya existe, reintenta con un sufijo', () async {
+      var calls = 0;
+      final r = repo((req) {
+        if (req.url.path == '/api/User/ManageUser' && calls++ == 0) {
+          return json({
+            'responseCode': '39',
+            'message': 'USERNAME ALREADY EXISTS',
+          }, 400);
+        }
+        if (req.url.path == '/api/User/me') {
+          return json({'responseCode': '00', 'userData': {}});
+        }
+        return json({
+          'responseCode': '00',
+          'userData': {'userId': 'u2', 'email': 'juan@hotmail.com'},
+          'tokenData': tokens('a', 'b'),
+        });
+      });
+      await r.register(
+        email: 'juan@hotmail.com',
+        firstName: 'Juan',
+        firstLastName: 'Pérez',
+        password: 'clave123',
+      );
+      final first = (sentBody(0)['userData'] as Map)['username'];
+      final second = (sentBody(1)['userData'] as Map)['username'] as String;
+      expect(first, 'juan');
+      expect(second, matches(RegExp(r'^juan\d{4}$')));
+    });
+
+    test('si el correo ya existe no reintenta', () async {
+      final r = repo(
+        (_) => json({
+          'responseCode': '39',
+          'message': 'EMAIL ALREADY EXISTS',
+        }, 400),
+      );
+      await expectLater(
+        r.register(
+          email: 'ana@test.com',
+          firstName: 'Ana',
+          firstLastName: 'Gómez',
+          password: 'clave123',
+        ),
+        throwsA(isA<AuthException>()),
+      );
+      expect(requests, hasLength(1));
     });
   });
 

@@ -9,6 +9,7 @@ class Dependent {
     this.categoryName,
     this.secondName,
     this.secondLastName,
+    this.age,
   });
 
   final String id;
@@ -23,6 +24,9 @@ class Dependent {
 
   /// Nombre que manda la API al listar (en la lista no viene el id).
   final String? categoryName;
+
+  /// Años; null en registros anteriores a que la API la pidiera.
+  final int? age;
 
   String get fullName => [
     firstName,
@@ -50,6 +54,7 @@ class Dependent {
     secondLastName: secondLastName,
     categoryId: id,
     categoryName: categoryName,
+    age: age,
   );
 
   factory Dependent.fromJson(Map<String, dynamic> json) => Dependent(
@@ -61,6 +66,7 @@ class Dependent {
     secondLastName: _blankToNull(json['secondLastName']),
     categoryId: (json['categoryId'] as num?)?.toInt() ?? 0,
     categoryName: _blankToNull(json['categoryName']),
+    age: (json['age'] as num?)?.toInt(),
   );
 
   static String? _blankToNull(Object? v) {
@@ -76,6 +82,7 @@ class DependentInput {
     required this.firstName,
     required this.firstLastName,
     required this.categoryId,
+    required this.age,
     this.secondName,
     this.secondLastName,
   });
@@ -86,6 +93,7 @@ class DependentInput {
   final String firstLastName;
   final String? secondLastName;
   final int categoryId;
+  final int age;
 
   Map<String, dynamic> toJson() => {
     'cui': cui,
@@ -95,5 +103,6 @@ class DependentInput {
     if (secondLastName != null && secondLastName!.isNotEmpty)
       'secondLastName': secondLastName,
     'categoryId': categoryId,
+    'age': age,
   };
 }

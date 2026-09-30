@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app/app_theme.dart';
 import 'app/env.dart';
+import 'app/home.dart';
 import 'app/routes.dart';
 import 'core/network/api_client.dart';
 import 'core/widgets/feedback.dart';
@@ -15,12 +16,12 @@ import 'features/auth/presentation/login_page.dart';
 import 'features/auth/presentation/register_page.dart';
 import 'features/family/data/dependent.dart';
 import 'features/family/data/dependent_repository.dart';
-import 'features/family/presentation/family_page.dart';
-import 'core/access/permissions.dart';
 import 'features/admin/data/admin_repository.dart';
-import 'features/admin/presentation/admin_home_page.dart';
+import 'features/billing/data/billing_repository.dart';
 import 'features/categories/data/category_repository.dart';
+import 'features/notifications/data/notification_repository.dart';
 import 'features/payments/data/payments_repository.dart';
+import 'features/payments/data/settings_repository.dart';
 import 'features/profile/data/profile_review_store.dart';
 import 'features/profile/presentation/confirm_profile_page.dart';
 
@@ -44,9 +45,10 @@ Future<void> main() async {
     DependentRepository.instance = ApiDependentRepository(api);
     CategoryRepository.instance = ApiCategoryRepository(api);
     AdminRepository.instance = ApiAdminRepository(api);
-    if (Env.paymentsApi) {
-      PaymentsRepository.instance = ApiPaymentsRepository(api);
-    }
+    PaymentsRepository.instance = ApiPaymentsRepository(api);
+    SettingsRepository.instance = ApiSettingsRepository(api);
+    BillingRepository.instance = ApiBillingRepository(api);
+    NotificationRepository.instance = ApiNotificationRepository(api);
   }
 
   if (Env.useMock) await _seedMockFamily();
@@ -80,6 +82,7 @@ Future<void> _seedMockFamily() async {
         firstName: name,
         firstLastName: 'Castro',
         categoryId: category,
+        age: category == 3 ? 9 : 7,
       ),
     );
   }
@@ -137,7 +140,7 @@ class YankeesApp extends StatelessWidget {
   static Route<void> _route(RouteSettings settings) {
     final Widget page = switch (settings.name) {
       Routes.register => const RegisterPage(),
-      Routes.home => _homeFor(settings.arguments! as AppUser),
+      Routes.home => homeFor(settings.arguments! as AppUser),
       Routes.confirmProfile => ConfirmProfilePage(
         user: settings.arguments! as AppUser,
       ),
@@ -145,15 +148,4 @@ class YankeesApp extends StatelessWidget {
     };
     return MaterialPageRoute(builder: (_) => page, settings: settings);
   }
-
-  /// Con permisos de administración: panel de admin (sus secciones dependen
-  /// de cada permiso). Solo con "gestionar mis hijos": Mi familia.
-  ///
-  /// Si la API no informa permisos (versión sin roles/permisos en `/me`),
-  /// se usa Mi familia, que es la experiencia base de todo usuario.
-  static Widget _homeFor(AppUser user) =>
-      user.permissions.isEmpty ||
-          (!user.isAdmin && user.can(Permissions.ownDependents))
-      ? FamilyPage(user: user)
-      : AdminHomePage(user: user);
 }

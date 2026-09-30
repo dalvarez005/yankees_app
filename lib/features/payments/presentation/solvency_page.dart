@@ -3,15 +3,12 @@ import 'package:flutter/material.dart';
 import '../../../app/app_colors.dart';
 import '../../../core/format/formats.dart';
 import '../../../core/widgets/app_ui.dart';
-import '../../family/data/dependent.dart';
-import '../../family/data/dependent_repository.dart';
 import '../data/payment_models.dart';
 import '../data/payments_repository.dart';
 import 'charge_detail_page.dart';
 import 'charge_widgets.dart';
 
-/// Solvencia del padre: estado general, el de cada hijo y los pagos
-/// aprobados por el club.
+/// Solvencia del padre: estado general y los pagos aprobados por el club.
 class SolvencyPage extends StatefulWidget {
   const SolvencyPage({super.key});
 
@@ -20,8 +17,8 @@ class SolvencyPage extends StatefulWidget {
 }
 
 class _SolvencyPageState extends State<SolvencyPage> {
-  Balance? _balance;
-  List<Dependent> _kids = const [];
+  AccountBalance? _balance;
+  List<Charge> _charges = const [];
   String? _error;
 
   @override
@@ -33,18 +30,17 @@ class _SolvencyPageState extends State<SolvencyPage> {
   Future<void> _load() async {
     setState(() => _error = null);
     try {
-      final kidsFuture = DependentRepository.instance.list();
-      final charges = await PaymentsRepository.instance.myCharges();
-      final kids = await kidsFuture;
+      final repo = PaymentsRepository.instance;
+      final chargesFuture = repo.myCharges();
+      final balance = await repo.myBalance();
+      final charges = await chargesFuture;
       if (mounted) {
         setState(() {
-          _balance = Balance(charges);
-          _kids = kids;
+          _balance = balance;
+          _charges = charges;
         });
       }
     } on PaymentsException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    } on DependentException catch (e) {
       if (mounted) setState(() => _error = e.message);
     }
   }
@@ -52,7 +48,7 @@ class _SolvencyPageState extends State<SolvencyPage> {
   @override
   Widget build(BuildContext context) {
     final b = _balance;
-    final paid = [...?b?.paid]
+    final paid = [..._charges.where((c) => c.status == ChargeStatus.paid)]
       ..sort(
         (x, y) => (y.paidAt ?? y.createdAt).compareTo(x.paidAt ?? x.createdAt),
       );
@@ -68,34 +64,8 @@ class _SolvencyPageState extends State<SolvencyPage> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
             if (b != null) ...[
-              _Seal(balance: b),
+              SolvencySeal(balance: b),
               const SizedBox(height: 18),
-              if (_kids.isNotEmpty) ...[
-                ListHeader('Por hijo', count: _kids.length),
-                for (final k in _kids)
-                  ListCard(
-                    leading: AppAvatar(seed: k.cui, initials: k.initials),
-                    title: k.fullName,
-                    subtitle: b.solventFor(k.id)
-                        ? 'Sin pagos pendientes'
-                        : 'Debe ${formatMoney(b.owedBy(k.id))}',
-                    trailing: Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: b.solventFor(k.id)
-                          ? const Pill(
-                              'Solvente',
-                              tone: PillTone.success,
-                              icon: Icons.verified_rounded,
-                            )
-                          : const Pill(
-                              'Pendiente',
-                              tone: PillTone.warning,
-                              icon: Icons.schedule_rounded,
-                            ),
-                    ),
-                  ),
-                const SizedBox(height: 10),
-              ],
               ListHeader('Pagos aprobados', count: paid.length),
               if (paid.isEmpty)
                 const EmptyState(
@@ -122,15 +92,28 @@ class _SolvencyPageState extends State<SolvencyPage> {
   }
 }
 
-/// Sello grande: verde si está solvente, ámbar si debe algo.
-class _Seal extends StatelessWidget {
-  const _Seal({required this.balance});
-  final Balance balance;
+/// Sello grande: verde si está solvente, rojo si es insolvente.
+class SolvencySeal extends StatelessWidget {
+  const SolvencySeal({super.key, required this.balance});
+  final AccountBalance balance;
 
   @override
   Widget build(BuildContext context) {
-    final ok = balance.solvent;
-    final color = ok ? AppColors.success : const Color(0xFFB45309);
+    final b = balance;
+    final ok = b.solvent;
+    final color = ok ? AppColors.success : AppColors.error;
+    final String message;
+    if (!ok) {
+      message =
+          'Tienes ${formatMoney(b.overdueAmount)} vencido. Paga y sube el '
+          'comprobante para volver a estar solvente.';
+    } else if (b.totalOwed > 0) {
+      message =
+          'Estás al día. Tienes ${formatMoney(b.totalOwed)} por pagar'
+          '${b.nextDueDate == null ? '' : ' antes del ${formatDate(b.nextDueDate!)}'}.';
+    } else {
+      message = 'Estás al día con el club al ${formatDate(DateTime.now())}.';
+    }
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 20),
       decoration: BoxDecoration(
@@ -155,14 +138,14 @@ class _Seal extends StatelessWidget {
               ),
             ),
             child: Icon(
-              ok ? Icons.workspace_premium_rounded : Icons.pending_actions,
+              ok ? Icons.workspace_premium_rounded : Icons.warning_rounded,
               color: Colors.white,
               size: 40,
             ),
           ),
           const SizedBox(height: 14),
           Text(
-            ok ? 'Solvente' : 'Con pagos pendientes',
+            ok ? 'Solvente' : 'INSOLVENTE',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 24,
@@ -171,14 +154,20 @@ class _Seal extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            ok
-                ? 'Estás al día con el club al ${formatDate(DateTime.now())}.'
-                : 'Debes ${formatMoney(balance.totalOwed)} en '
-                      '${balance.open.length} '
-                      '${balance.open.length == 1 ? 'cobro' : 'cobros'}.',
+            message,
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white.withValues(alpha: 0.9)),
           ),
+          if (b.inReviewAmount > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${formatMoney(b.inReviewAmount)} en revisión',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 12.5,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -223,12 +212,16 @@ class _MyPaymentsPageState extends State<MyPaymentsPage> {
   @override
   Widget build(BuildContext context) {
     final all = _charges ?? const <Charge>[];
-    List<Charge> by(ChargeStatus s) => [...all.where((c) => c.status == s)];
+    List<Charge> by(bool Function(Charge) test) => [...all.where(test)];
     final groups = [
-      ('Rechazados', by(ChargeStatus.rejected)),
-      ('Por pagar', by(ChargeStatus.pending)),
-      ('En revisión', by(ChargeStatus.inReview)),
-      ('Pagados', by(ChargeStatus.paid)),
+      ('Vencidos', by((c) => c.status.canUpload && c.overdue)),
+      (
+        'Rechazados',
+        by((c) => c.status == ChargeStatus.rejected && !c.overdue),
+      ),
+      ('Por pagar', by((c) => c.status == ChargeStatus.pending && !c.overdue)),
+      ('En revisión', by((c) => c.status == ChargeStatus.inReview)),
+      ('Pagados', by((c) => c.status == ChargeStatus.paid)),
     ];
     return Scaffold(
       appBar: pageAppBar(
@@ -254,7 +247,9 @@ class _MyPaymentsPageState extends State<MyPaymentsPage> {
           empty: const EmptyState(
             icon: Icons.receipt_long_outlined,
             title: 'No tienes cobros',
-            message: 'Cuando el club te asigne un pago aparecerá aquí.',
+            message:
+                'Tu inscripción y tus mensualidades aparecerán aquí cuando '
+                'el club las genere.',
           ),
           children: [
             for (final (label, items) in groups)
