@@ -1,18 +1,25 @@
 import 'dart:io' show Platform;
 
 /// Configuración por ambiente. Se sobrescribe al compilar con
-/// `--dart-define=API_BASE_URL=https://api.club.com`, etc.
+/// `--dart-define=API_BASE_URL=local`, etc.
 class Env {
   static const _apiBaseUrl = String.fromEnvironment('API_BASE_URL');
 
-  /// URL de la API. Por defecto la API local: el emulador de Android llega
-  /// a la máquina por 10.0.2.2; el simulador de iOS por localhost.
-  static String get apiBaseUrl {
-    if (_apiBaseUrl.isNotEmpty) return _apiBaseUrl;
-    return Platform.isAndroid
-        ? 'http://10.0.2.2:5114'
-        : 'http://localhost:5114';
-  }
+  /// API del club en el servidor (HTTPS por el túnel de Cloudflare).
+  static const productionApiBaseUrl = 'https://yankeesapi.quantis.site';
+
+  /// API levantada en la máquina de desarrollo: el emulador de Android
+  /// llega a ella por 10.0.2.2; el simulador de iOS por localhost.
+  static String get localApiBaseUrl =>
+      Platform.isAndroid ? 'http://10.0.2.2:5114' : 'http://localhost:5114';
+
+  /// URL de la API: la del servidor, salvo que se compile con
+  /// `--dart-define=API_BASE_URL=...` (`local` usa [localApiBaseUrl]).
+  static String get apiBaseUrl => switch (_apiBaseUrl) {
+    '' => productionApiBaseUrl,
+    'local' => localApiBaseUrl,
+    _ => _apiBaseUrl,
+  };
 
   /// Client ID "Web" de Google con el que la API valida el idToken
   /// (debe coincidir con Google__clientId del backend).
