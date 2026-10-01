@@ -6,6 +6,7 @@ import '../../billing/data/billing_models.dart';
 import 'app_user.dart';
 import 'auth_repository.dart';
 import 'google_id_token_provider.dart';
+import '../../notifications/data/push_registration.dart';
 
 /// Implementación contra la API de Yankees.
 ///
@@ -244,6 +245,8 @@ class ApiAuthRepository implements AuthRepository {
 
   @override
   Future<void> signOut() async {
+    // Antes de cerrar: todavía hace falta el token de acceso.
+    await PushRegistration.instance.unregister();
     await _session.end();
     await _google.signOut();
     await _pending.signOut();

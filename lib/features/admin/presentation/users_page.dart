@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../app/app_colors.dart';
 import '../../../core/access/permissions.dart';
 import '../../../core/widgets/app_ui.dart';
+import '../../../core/paging/page_of.dart';
 import '../../../core/widgets/feedback.dart';
+import '../../../core/widgets/filter_bar.dart';
+import '../../../core/widgets/paged_list.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
 import '../../billing/presentation/pending_users_page.dart';
@@ -21,34 +24,54 @@ class UsersPage extends StatefulWidget {
 }
 
 class _UsersPageState extends State<UsersPage> {
-  final _search = TextEditingController();
-  List<ManagedUser>? _users;
   List<Role> _roles = const [];
-  String? _error;
+  String _search = '';
+  Map<String, Object?> _filters = const {};
+
+  /// Lo último que devolvió la API para la búsqueda actual. La API no
+  /// pagina ni filtra por rol o estado, así que eso se hace aquí.
+  List<ManagedUser> _all = const [];
+
+  late final _list = PagedController<ManagedUser>((page, pageSize) async {
+    if (page == 1) {
+      final users = await AdminRepository.instance.users(search: _search);
+      _all = users;
+      // Para que el filtro de rol ofrezca los roles que hay.
+      if (mounted) setState(() {});
+    }
+    final role = _filters['role'] as String?;
+    final active = _filters['status'] as bool?;
+    return pageOf(
+      [
+        for (final u in _all)
+          if ((role == null || u.roleName == role) &&
+              (active == null || u.active == active))
+            u,
+      ],
+      page,
+      pageSize,
+    );
+  });
 
   bool get _canManage => widget.user.can(Permissions.usersManage);
+
+  /// Roles presentes entre los usuarios cargados.
+  List<FilterChoice> get _roleChoices {
+    final names = {for (final u in _all) ?u.roleName}.toList()..sort();
+    return [for (final n in names) FilterChoice(n, roleLabel(n))];
+  }
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _list.refresh();
     if (_canManage) _loadRoles();
   }
 
   @override
   void dispose() {
-    _search.dispose();
+    _list.dispose();
     super.dispose();
-  }
-
-  Future<void> _load() async {
-    setState(() => _error = null);
-    try {
-      final users = await AdminRepository.instance.users(search: _search.text);
-      if (mounted) setState(() => _users = users);
-    } on AdminException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    }
   }
 
   Future<void> _loadRoles() async {
@@ -74,67 +97,62 @@ class _UsersPageState extends State<UsersPage> {
         isSelf: u.id == widget.user.id,
       ),
     );
-    if (changed == true) await _load();
+    if (changed == true) await _list.refresh(keepItems: true);
   }
 
   @override
   Widget build(BuildContext context) {
     if (!widget.user.can(Permissions.usersView)) return const NoAccessView();
-    final users = _users;
+    final roleChoices = _roleChoices;
+    final filtered = _search.isNotEmpty || _filters.isNotEmpty;
     return Scaffold(
       appBar: pageAppBar(context, 'Usuarios'),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: TextField(
-              controller: _search,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => _load(),
-              decoration: InputDecoration(
-                hintText: 'Buscar por nombre o correo',
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                suffixIcon: IconButton(
-                  tooltip: 'Limpiar',
-                  icon: const Icon(Icons.close_rounded, size: 20),
-                  onPressed: () {
-                    _search.clear();
-                    _load();
-                  },
+          FilterBar(
+            searchHint: 'Buscar por nombre o correo',
+            filters: [
+              if (roleChoices.length > 1)
+                FilterSpec(
+                  key: 'role',
+                  title: 'Rol',
+                  icon: Icons.badge_outlined,
+                  choices: roleChoices,
                 ),
+              const FilterSpec(
+                key: 'status',
+                title: 'Estado',
+                icon: Icons.toggle_on_outlined,
+                choices: [
+                  FilterChoice(true, 'Activos'),
+                  FilterChoice(false, 'Inactivos'),
+                ],
               ),
-            ),
+            ],
+            values: _filters,
+            search: _search,
+            onChanged: (search, values) {
+              setState(() {
+                _search = search;
+                _filters = values;
+              });
+              _list.refresh();
+            },
           ),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: _load,
-              color: AppColors.navy,
-              child: AsyncListView(
-                loading: users == null,
-                error: _error,
-                onRetry: _load,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                header: users == null || users.isEmpty
-                    ? null
-                    : ListHeader(
-                        users.length == 1 ? 'Cuenta' : 'Cuentas',
-                        count: users.length,
-                      ),
-                empty: EmptyState(
-                  icon: Icons.person_search_rounded,
-                  title: 'Sin resultados',
-                  message: _search.text.trim().isEmpty
-                      ? 'Todavía no hay cuentas registradas.'
-                      : 'Ninguna cuenta coincide con "${_search.text.trim()}".',
-                ),
-                children: [
-                  for (final u in users ?? const <ManagedUser>[])
-                    _UserTile(
-                      user: u,
-                      isSelf: u.id == widget.user.id,
-                      onTap: () => _open(u),
-                    ),
-                ],
+            child: PagedListView<ManagedUser>(
+              controller: _list,
+              empty: EmptyState(
+                icon: Icons.person_search_rounded,
+                title: 'Sin resultados',
+                message: filtered
+                    ? 'Ninguna cuenta coincide con la búsqueda o los filtros.'
+                    : 'Todavía no hay cuentas registradas.',
+              ),
+              itemBuilder: (context, u) => _UserTile(
+                user: u,
+                isSelf: u.id == widget.user.id,
+                onTap: () => _open(u),
               ),
             ),
           ),

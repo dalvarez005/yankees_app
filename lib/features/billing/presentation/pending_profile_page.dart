@@ -10,6 +10,7 @@ import '../../auth/data/auth_repository.dart';
 import '../../payments/data/payment_models.dart';
 import '../../payments/data/payments_repository.dart';
 import '../../payments/data/settings_repository.dart';
+import '../../../core/widgets/whatsapp_logo.dart';
 
 /// Padre recién registrado que el club aún no valida (perfil de cobro
 /// `P`). No puede avanzar hasta que un administrador defina sus cuotas.
@@ -191,7 +192,7 @@ class _PendingProfilePageState extends State<PendingProfilePage> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      icon: const Icon(Icons.chat_rounded),
+                      icon: const WhatsAppLogo(size: 20),
                       label: Text(
                         'Escribir a ${contact.contactName ?? 'Tesorería del club'}',
                       ),

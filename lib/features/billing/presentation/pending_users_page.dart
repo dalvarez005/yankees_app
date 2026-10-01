@@ -5,7 +5,9 @@ import '../../../core/access/permissions.dart';
 import '../../../core/format/formats.dart';
 import '../../../core/widgets/app_ui.dart';
 import '../../../core/widgets/feedback.dart';
+import '../../../core/widgets/filter_bar.dart';
 import '../../../core/widgets/money_field.dart';
+import '../../../core/widgets/paged_list.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
 import '../../payments/data/payment_models.dart';
@@ -13,6 +15,7 @@ import '../../payments/data/payments_repository.dart';
 import '../../payments/data/settings_repository.dart';
 import '../data/billing_models.dart';
 import '../data/billing_repository.dart';
+import '../../../core/widgets/form_ready.dart';
 
 /// Usuarios recién registrados esperando validación (`usuarios.validar`),
 /// los más antiguos primero.
@@ -29,10 +32,16 @@ class PendingUsersPage extends StatefulWidget {
 }
 
 class _PendingUsersPageState extends State<PendingUsersPage> {
-  final _search = TextEditingController();
-  List<PendingUser>? _users;
-  String? _error;
+  String _search = '';
   late String? _autoOpen = widget.openUserId;
+
+  late final _list = PagedController<PendingUser>(
+    (page, pageSize) => BillingRepository.instance.pendingUsers(
+      search: _search,
+      page: page,
+      pageSize: pageSize,
+    ),
+  );
 
   @override
   void initState() {
@@ -42,24 +51,17 @@ class _PendingUsersPageState extends State<PendingUsersPage> {
 
   @override
   void dispose() {
-    _search.dispose();
+    _list.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
-    setState(() => _error = null);
-    try {
-      final users = await BillingRepository.instance.pendingUsers(
-        search: _search.text,
-      );
-      if (!mounted) return;
-      setState(() => _users = users);
-      final target = users.where((u) => u.id == _autoOpen).firstOrNull;
-      _autoOpen = null;
-      if (target != null) await _open(target);
-    } on BillingException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    }
+    await _list.refresh();
+    if (!mounted) return;
+    // Desde una notificación: abre directo a ese usuario si sigue pendiente.
+    final target = _list.items?.where((u) => u.id == _autoOpen).firstOrNull;
+    _autoOpen = null;
+    if (target != null) await _open(target);
   }
 
   Future<void> _open(PendingUser u) async {
@@ -72,7 +74,7 @@ class _PendingUsersPageState extends State<PendingUsersPage> {
         '${u.name} fue validado. Ya puede usar la app y se creó su '
         'cobro de inscripción.',
       );
-      await _load();
+      _list.update((items) => items.removeWhere((x) => x.id == u.id));
     }
   }
 
@@ -81,76 +83,52 @@ class _PendingUsersPageState extends State<PendingUsersPage> {
     if (!widget.user.can(Permissions.usersValidate)) {
       return const NoAccessView();
     }
-    final users = _users;
     return Scaffold(
       appBar: pageAppBar(context, 'Usuarios por validar'),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: TextField(
-              controller: _search,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => _load(),
-              decoration: InputDecoration(
-                hintText: 'Buscar por nombre o correo',
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                suffixIcon: IconButton(
-                  tooltip: 'Limpiar',
-                  icon: const Icon(Icons.close_rounded, size: 20),
-                  onPressed: () {
-                    _search.clear();
-                    _load();
-                  },
-                ),
-              ),
-            ),
+          FilterBar(
+            searchHint: 'Buscar por nombre o correo',
+            search: _search,
+            onChanged: (search, _) {
+              setState(() => _search = search);
+              _list.refresh();
+            },
           ),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: _load,
-              color: AppColors.navy,
-              child: AsyncListView(
-                loading: users == null,
-                error: _error,
-                onRetry: _load,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                header: users == null || users.isEmpty
-                    ? null
-                    : ListHeader('Esperando validación', count: users.length),
-                empty: const EmptyState(
-                  icon: Icons.how_to_reg_rounded,
-                  title: 'Nadie esperando',
-                  message: 'Cuando alguien se registre aparecerá aquí.',
-                ),
-                children: [
-                  for (final u in users ?? const <PendingUser>[])
-                    ListCard(
-                      onTap: () => _open(u),
-                      leading: AppAvatar(seed: u.email, initials: _initials(u)),
-                      title: u.name,
-                      subtitle: u.email,
-                      footer: Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          if (u.createdAt != null)
-                            Pill(
-                              'Desde ${formatDate(u.createdAt!)}',
-                              icon: Icons.schedule_rounded,
-                              tone: PillTone.warning,
-                            ),
-                          Pill(
-                            u.dependentsCount == 1
-                                ? '1 hijo'
-                                : '${u.dependentsCount} hijos',
-                            icon: Icons.child_care_rounded,
-                            tone: PillTone.brand,
-                          ),
-                        ],
+            child: PagedListView<PendingUser>(
+              controller: _list,
+              empty: EmptyState(
+                icon: Icons.how_to_reg_rounded,
+                title: _search.isEmpty ? 'Nadie esperando' : 'Sin resultados',
+                message: _search.isEmpty
+                    ? 'Cuando alguien se registre aparecerá aquí.'
+                    : 'Ningún usuario pendiente coincide con "$_search".',
+              ),
+              itemBuilder: (context, u) => ListCard(
+                onTap: () => _open(u),
+                leading: AppAvatar(seed: u.email, initials: _initials(u)),
+                title: u.name,
+                subtitle: u.email,
+                footer: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    if (u.createdAt != null)
+                      Pill(
+                        'Desde ${formatDate(u.createdAt!)}',
+                        icon: Icons.schedule_rounded,
+                        tone: PillTone.warning,
                       ),
+                    Pill(
+                      u.dependentsCount == 1
+                          ? '1 hijo'
+                          : '${u.dependentsCount} hijos',
+                      icon: Icons.child_care_rounded,
+                      tone: PillTone.brand,
                     ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -178,16 +156,20 @@ class ValidateUserPage extends StatefulWidget {
   State<ValidateUserPage> createState() => _ValidateUserPageState();
 }
 
-class _ValidateUserPageState extends State<ValidateUserPage> {
+class _ValidateUserPageState extends State<ValidateUserPage> with FormReady {
   final _formKey = GlobalKey<FormState>();
   final _enrollment = TextEditingController();
   final _monthly = TextEditingController();
   PaymentSettings? _settings;
   bool _saving = false;
 
+  bool get _ready =>
+      moneyError(_enrollment.text) == null && moneyError(_monthly.text) == null;
+
   @override
   void initState() {
     super.initState();
+    watchFields([_enrollment, _monthly]);
     _loadDefaults();
   }
 
@@ -253,6 +235,7 @@ class _ValidateUserPageState extends State<ValidateUserPage> {
       appBar: pageAppBar(context, 'Validar usuario'),
       body: Form(
         key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
@@ -311,7 +294,7 @@ class _ValidateUserPageState extends State<ValidateUserPage> {
             LoadingButton(
               label: 'Validar usuario',
               loading: _saving,
-              onPressed: _validate,
+              onPressed: _ready ? _validate : null,
             ),
           ],
         ),
@@ -338,7 +321,7 @@ class UserFeesSection extends StatefulWidget {
   State<UserFeesSection> createState() => _UserFeesSectionState();
 }
 
-class _UserFeesSectionState extends State<UserFeesSection> {
+class _UserFeesSectionState extends State<UserFeesSection> with FormReady {
   final _formKey = GlobalKey<FormState>();
   final _enrollment = TextEditingController();
   final _monthly = TextEditingController();
@@ -346,9 +329,13 @@ class _UserFeesSectionState extends State<UserFeesSection> {
   String? _error;
   bool _saving = false;
 
+  bool get _ready =>
+      moneyError(_enrollment.text) == null && moneyError(_monthly.text) == null;
+
   @override
   void initState() {
     super.initState();
+    watchFields([_enrollment, _monthly]);
     _load();
   }
 
@@ -462,6 +449,7 @@ class _UserFeesSectionState extends State<UserFeesSection> {
     } else {
       body = Form(
         key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -499,7 +487,7 @@ class _UserFeesSectionState extends State<UserFeesSection> {
             LoadingButton(
               label: 'Guardar cuotas',
               loading: _saving,
-              onPressed: _save,
+              onPressed: _ready ? _save : null,
             ),
           ],
         ),

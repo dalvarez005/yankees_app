@@ -9,6 +9,7 @@ import '../../categories/data/category_repository.dart';
 import '../data/dependent.dart';
 import '../data/dependent_repository.dart';
 import '../../../core/widgets/feedback.dart';
+import '../../../core/widgets/form_ready.dart';
 
 /// Alta o edición de un hijo. Devuelve el [Dependent] guardado al cerrar.
 class DependentFormPage extends StatefulWidget {
@@ -29,7 +30,7 @@ class DependentFormPage extends StatefulWidget {
   State<DependentFormPage> createState() => _DependentFormPageState();
 }
 
-class _DependentFormPageState extends State<DependentFormPage> {
+class _DependentFormPageState extends State<DependentFormPage> with FormReady {
   final _formKey = GlobalKey<FormState>();
   late final _cui = TextEditingController(text: widget.dependent?.cui);
   late final _firstName = TextEditingController(
@@ -51,6 +52,36 @@ class _DependentFormPageState extends State<DependentFormPage> {
   bool _saving = false;
 
   bool get _isEdit => widget.dependent != null;
+
+  static String? _ageError(String? v) {
+    final age = int.tryParse(v?.trim() ?? '');
+    if (age == null) return 'La edad es obligatoria';
+    if (age > 120) return 'Edad no válida';
+    return null;
+  }
+
+  bool get _ready =>
+      Validators.cui(_cui.text) == null &&
+      Validators.name(_firstName.text, 'El nombre') == null &&
+      Validators.optionalName(_secondName.text, 'El segundo nombre') == null &&
+      Validators.name(_firstLastName.text, 'El apellido') == null &&
+      Validators.optionalName(_secondLastName.text, 'El segundo apellido') ==
+          null &&
+      _ageError(_age.text) == null &&
+      _categoryId != null;
+
+  @override
+  void initState() {
+    super.initState();
+    watchFields([
+      _cui,
+      _firstName,
+      _secondName,
+      _firstLastName,
+      _secondLastName,
+      _age,
+    ]);
+  }
 
   @override
   void dispose() {
@@ -117,6 +148,7 @@ class _DependentFormPageState extends State<DependentFormPage> {
               constraints: const BoxConstraints(maxWidth: 480),
               child: Form(
                 key: _formKey,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -182,12 +214,7 @@ class _DependentFormPageState extends State<DependentFormPage> {
                         FilteringTextInputFormatter.digitsOnly,
                         LengthLimitingTextInputFormatter(3),
                       ],
-                      validator: (v) {
-                        final age = int.tryParse(v?.trim() ?? '');
-                        if (age == null) return 'La edad es obligatoria';
-                        if (age > 120) return 'Edad no válida';
-                        return null;
-                      },
+                      validator: _ageError,
                     ),
                     gap,
                     _CategoryField(
@@ -203,7 +230,7 @@ class _DependentFormPageState extends State<DependentFormPage> {
                     LoadingButton(
                       label: _isEdit ? 'Guardar cambios' : 'Agregar',
                       loading: _saving,
-                      onPressed: _save,
+                      onPressed: _ready ? _save : null,
                     ),
                   ],
                 ),

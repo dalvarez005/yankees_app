@@ -93,11 +93,11 @@ void main() {
   group('inicio según el perfil de cobro', () {
     test('P → pantalla de espera; A o sin dato → Mi familia', () {
       expect(
-        homeFor(_parent(BillingStatus.pending)),
+        homePageFor(_parent(BillingStatus.pending)),
         isA<PendingProfilePage>(),
       );
-      expect(homeFor(_parent(BillingStatus.active)), isA<FamilyPage>());
-      expect(homeFor(_parent(null)), isA<FamilyPage>());
+      expect(homePageFor(_parent(BillingStatus.active)), isA<FamilyPage>());
+      expect(homePageFor(_parent(null)), isA<FamilyPage>());
     });
 
     test('admin exento aunque figure pendiente', () {
@@ -111,7 +111,7 @@ void main() {
         billing: Billing(status: BillingStatus.pending),
       );
       expect(admin.awaitingValidation, isFalse);
-      expect(homeFor(admin), isA<AdminHomePage>());
+      expect(homePageFor(admin), isA<AdminHomePage>());
     });
   });
 

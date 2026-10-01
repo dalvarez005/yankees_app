@@ -10,6 +10,7 @@ import 'widgets/auth_switch_link.dart';
 import 'widgets/google_button.dart';
 import 'widgets/loading_button.dart';
 import '../../../core/widgets/feedback.dart';
+import '../../../core/widgets/form_ready.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -18,7 +19,7 @@ class RegisterPage extends StatefulWidget {
   State<RegisterPage> createState() => _RegisterPageState();
 }
 
-class _RegisterPageState extends State<RegisterPage> {
+class _RegisterPageState extends State<RegisterPage> with FormReady {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _firstName = TextEditingController();
@@ -27,6 +28,19 @@ class _RegisterPageState extends State<RegisterPage> {
   final _confirm = TextEditingController();
   bool _loading = false;
   bool _googleLoading = false;
+
+  bool get _ready =>
+      Validators.name(_firstName.text, 'El nombre') == null &&
+      Validators.name(_firstLastName.text, 'El apellido') == null &&
+      Validators.email(_email.text) == null &&
+      Validators.password(_password.text) == null &&
+      Validators.confirmPassword(_confirm.text, _password.text) == null;
+
+  @override
+  void initState() {
+    super.initState();
+    watchFields([_email, _firstName, _firstLastName, _password, _confirm]);
+  }
 
   @override
   void dispose() {
@@ -96,6 +110,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
                   child: Form(
                     key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
                     child: AutofillGroup(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -160,7 +175,9 @@ class _RegisterPageState extends State<RegisterPage> {
                           LoadingButton(
                             label: 'Crear cuenta',
                             loading: _loading,
-                            onPressed: _googleLoading ? null : _submit,
+                            onPressed: _googleLoading || !_ready
+                                ? null
+                                : _submit,
                           ),
                           const SizedBox(height: 12),
                           AuthSwitchLink(

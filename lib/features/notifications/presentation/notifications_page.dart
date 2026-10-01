@@ -5,6 +5,8 @@ import '../../../core/access/permissions.dart';
 import '../../../core/format/formats.dart';
 import '../../../core/widgets/app_ui.dart';
 import '../../../core/widgets/feedback.dart';
+import '../../../core/widgets/filter_bar.dart';
+import '../../../core/widgets/paged_list.dart';
 import '../../auth/data/app_user.dart';
 import '../../billing/presentation/pending_users_page.dart';
 import '../../payments/data/payments_repository.dart';
@@ -12,6 +14,7 @@ import '../../payments/presentation/admin/review_payments_page.dart';
 import '../../payments/presentation/charge_detail_page.dart';
 import '../../payments/presentation/solvency_page.dart';
 import '../data/notification_repository.dart';
+import '../data/notification_watcher.dart';
 
 /// Campana con el número de notificaciones sin leer, para las cabeceras
 /// de marca (fondo azul). Al volver de la lista se actualiza el número.
@@ -34,6 +37,14 @@ class _NotificationBellState extends State<NotificationBell> {
   void initState() {
     super.initState();
     _load();
+    // Al llegar una notificación nueva se actualiza el contador.
+    NotificationWatcher.arrivals.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    NotificationWatcher.arrivals.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -89,28 +100,28 @@ class NotificationsPage extends StatefulWidget {
 }
 
 class _NotificationsPageState extends State<NotificationsPage> {
-  List<AppNotification>? _items;
   int _unread = 0;
-  String? _error;
+  Map<String, Object?> _filters = const {};
+
+  late final _list = PagedController<AppNotification>((page, _) async {
+    final result = await NotificationRepository.instance.myNotifications(
+      page: page,
+      unreadOnly: _filters['unread'] == true,
+    );
+    if (mounted) setState(() => _unread = result.unreadCount);
+    return result.items;
+  }, pageSize: NotificationRepository.pageSize);
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _list.refresh();
   }
 
-  Future<void> _load() async {
-    setState(() => _error = null);
-    try {
-      final page = await NotificationRepository.instance.myNotifications();
-      if (!mounted) return;
-      setState(() {
-        _items = page.items;
-        _unread = page.unreadCount;
-      });
-    } on NotificationException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    }
+  @override
+  void dispose() {
+    _list.dispose();
+    super.dispose();
   }
 
   Future<void> _markAll() async {
@@ -120,9 +131,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
       );
       final now = DateTime.now();
       if (!mounted) return;
-      setState(() {
-        _unread = unread;
-        _items = [for (final n in _items ?? const []) n.markedRead(now)];
+      setState(() => _unread = unread);
+      _list.update((items) {
+        for (var i = 0; i < items.length; i++) {
+          items[i] = items[i].markedRead(now);
+        }
       });
     } on NotificationException catch (e) {
       if (mounted) showAppMessage(context, e.message, error: true);
@@ -137,12 +150,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
         );
         final now = DateTime.now();
         if (mounted) {
-          setState(() {
-            _unread = unread;
-            _items = [
-              for (final x in _items ?? const <AppNotification>[])
-                x.id == n.id ? x.markedRead(now) : x,
-            ];
+          setState(() => _unread = unread);
+          _list.update((items) {
+            final i = items.indexWhere((x) => x.id == n.id);
+            if (i >= 0) items[i] = items[i].markedRead(now);
           });
         }
       } on NotificationException {
@@ -195,7 +206,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final items = _items;
+    final unreadOnly = _filters['unread'] == true;
     return Scaffold(
       appBar: pageAppBar(
         context,
@@ -209,23 +220,38 @@ class _NotificationsPageState extends State<NotificationsPage> {
             ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        color: AppColors.navy,
-        child: AsyncListView(
-          loading: items == null,
-          error: _error,
-          onRetry: _load,
-          empty: const EmptyState(
-            icon: Icons.notifications_none_rounded,
-            title: 'Sin notificaciones',
-            message: 'Aquí verás avisos de pagos, cobros y tu cuenta.',
+      body: Column(
+        children: [
+          FilterBar(
+            filters: const [
+              FilterSpec(
+                key: 'unread',
+                title: 'Mostrar',
+                icon: Icons.mark_email_unread_outlined,
+                choices: [FilterChoice(true, 'Solo sin leer')],
+              ),
+            ],
+            values: _filters,
+            onChanged: (_, values) {
+              setState(() => _filters = values);
+              _list.refresh();
+            },
           ),
-          children: [
-            for (final n in items ?? const <AppNotification>[])
-              _NotificationTile(notification: n, onTap: () => _open(n)),
-          ],
-        ),
+          Expanded(
+            child: PagedListView<AppNotification>(
+              controller: _list,
+              empty: EmptyState(
+                icon: Icons.notifications_none_rounded,
+                title: unreadOnly ? 'Todo leído' : 'Sin notificaciones',
+                message: unreadOnly
+                    ? 'No tienes notificaciones sin leer.'
+                    : 'Aquí verás avisos de pagos, cobros y tu cuenta.',
+              ),
+              itemBuilder: (context, n) =>
+                  _NotificationTile(notification: n, onTap: () => _open(n)),
+            ),
+          ),
+        ],
       ),
     );
   }

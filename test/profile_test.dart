@@ -109,10 +109,11 @@ void main() {
         expect(find.text('joker12@gmail.com'), findsOneWidget);
         expect(find.text('GOOGLE'), findsNothing);
 
-        await tester.ensureVisible(find.text('Confirmar y continuar'));
-        await tester.tap(find.text('Confirmar y continuar'));
-        await tester.pumpAndSettle();
-        expect(find.text('El apellido es obligatorio'), findsOneWidget);
+        // Sin apellido no se puede confirmar.
+        final button = tester.widget<FilledButton>(
+          find.widgetWithText(FilledButton, 'Confirmar y continuar'),
+        );
+        expect(button.onPressed, isNull);
         expect(auth.saved, isNull);
       },
     );
@@ -123,6 +124,7 @@ void main() {
       final fields = find.byType(TextFormField);
       await tester.enterText(fields.at(0), 'Carlos');
       await tester.enterText(fields.at(2), 'Pérez');
+      await tester.pump();
       await tester.ensureVisible(find.text('Confirmar y continuar'));
       await tester.tap(find.text('Confirmar y continuar'));
       await tester.pumpAndSettle();

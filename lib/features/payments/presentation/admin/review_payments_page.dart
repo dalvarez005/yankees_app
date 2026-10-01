@@ -5,12 +5,14 @@ import '../../../../core/access/permissions.dart';
 import '../../../../core/format/formats.dart';
 import '../../../../core/widgets/app_ui.dart';
 import '../../../../core/widgets/feedback.dart';
+import '../../../../core/widgets/paged_list.dart';
 import '../../../auth/data/app_user.dart';
 import '../../data/payment_models.dart';
 import '../../data/payments_repository.dart';
 import '../charge_detail_page.dart';
 import '../charge_widgets.dart';
 import '../voucher_image.dart';
+import '../../../../core/widgets/form_ready.dart';
 
 /// Comprobantes esperando validación (requiere `pagos.validar`), del más
 /// antiguo al más reciente.
@@ -27,9 +29,12 @@ class ReviewPaymentsPage extends StatefulWidget {
 }
 
 class _ReviewPaymentsPageState extends State<ReviewPaymentsPage> {
-  List<Charge>? _queue;
-  String? _error;
   late String? _autoOpen = widget.openChargeId;
+
+  late final _list = PagedController<Charge>(
+    (page, pageSize) =>
+        PaymentsRepository.instance.reviewQueue(page: page, pageSize: pageSize),
+  );
 
   @override
   void initState() {
@@ -37,25 +42,28 @@ class _ReviewPaymentsPageState extends State<ReviewPaymentsPage> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _list.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
-    setState(() => _error = null);
-    try {
-      final queue = await PaymentsRepository.instance.reviewQueue();
-      if (!mounted) return;
-      setState(() => _queue = queue);
-      final target = queue.where((c) => c.id == _autoOpen).firstOrNull;
-      _autoOpen = null;
-      if (target != null) await _open(target);
-    } on PaymentsException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    }
+    await _list.refresh();
+    if (!mounted) return;
+    // Desde una notificación: abre directo ese comprobante si sigue en cola.
+    final target = _list.items?.where((c) => c.id == _autoOpen).firstOrNull;
+    _autoOpen = null;
+    if (target != null) await _open(target);
   }
 
   Future<void> _open(Charge c) async {
     final done = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => ReviewVoucherPage(charge: c)),
     );
-    if (done == true) await _load();
+    if (done == true) {
+      _list.update((items) => items.removeWhere((x) => x.id == c.id));
+    }
   }
 
   @override
@@ -63,29 +71,19 @@ class _ReviewPaymentsPageState extends State<ReviewPaymentsPage> {
     if (!widget.user.can(Permissions.paymentsReview)) {
       return const NoAccessView();
     }
-    final queue = _queue;
     return Scaffold(
       appBar: pageAppBar(context, 'Validar pagos'),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        color: AppColors.navy,
-        child: AsyncListView(
-          loading: queue == null,
-          error: _error,
-          onRetry: _load,
-          header: queue == null || queue.isEmpty
-              ? null
-              : ListHeader('Por validar', count: queue.length),
-          empty: const EmptyState(
-            icon: Icons.task_alt_rounded,
-            title: 'Todo al día',
-            message: 'No hay comprobantes esperando validación.',
-          ),
-          children: [
-            for (final c in queue ?? const <Charge>[])
-              ChargeCard(charge: c, showParent: true, onTap: () => _open(c)),
-          ],
+      body: PagedListView<Charge>(
+        controller: _list,
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        header: const ListHeader('Por validar · más antiguos primero'),
+        empty: const EmptyState(
+          icon: Icons.task_alt_rounded,
+          title: 'Todo al día',
+          message: 'No hay comprobantes esperando validación.',
         ),
+        itemBuilder: (context, c) =>
+            ChargeCard(charge: c, showParent: true, onTap: () => _open(c)),
       ),
     );
   }
@@ -168,7 +166,7 @@ class _ReviewVoucherPageState extends State<ReviewVoucherPage> {
             _EditWarning(signals: v.editSignalList),
             const SizedBox(height: 12),
           ],
-          if (v != null) VoucherImage(voucher: v, height: 320),
+          if (v != null) VoucherImage(voucher: v),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(18),
@@ -362,7 +360,7 @@ class _RejectSheet extends StatefulWidget {
   State<_RejectSheet> createState() => _RejectSheetState();
 }
 
-class _RejectSheetState extends State<_RejectSheet> {
+class _RejectSheetState extends State<_RejectSheet> with FormReady {
   final _formKey = GlobalKey<FormState>();
   final _comment = TextEditingController();
 
@@ -372,6 +370,20 @@ class _RejectSheetState extends State<_RejectSheet> {
     'No encontramos el depósito en el banco.',
     'El comprobante corresponde a otro pago.',
   ];
+
+  static String? _commentError(String? v) {
+    final t = v?.trim() ?? '';
+    if (t.isEmpty) return 'El motivo es obligatorio';
+    if (t.length < 10) return 'Explica un poco más (mín. 10)';
+    if (t.length > 500) return 'Máximo 500 caracteres';
+    return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    watchFields([_comment]);
+  }
 
   @override
   void dispose() {
@@ -390,6 +402,7 @@ class _RejectSheetState extends State<_RejectSheet> {
       ),
       child: Form(
         key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -427,22 +440,14 @@ class _RejectSheetState extends State<_RejectSheet> {
               decoration: const InputDecoration(
                 hintText: 'Explica qué está mal con el comprobante',
               ),
-              validator: (v) {
-                final t = v?.trim() ?? '';
-                if (t.isEmpty) return 'El motivo es obligatorio';
-                if (t.length < 10) return 'Explica un poco más (mín. 10)';
-                if (t.length > 500) return 'Máximo 500 caracteres';
-                return null;
-              },
+              validator: _commentError,
             ),
             const SizedBox(height: 12),
             FilledButton.icon(
               style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-              onPressed: () {
-                if (_formKey.currentState!.validate()) {
-                  Navigator.of(context).pop(_comment.text.trim());
-                }
-              },
+              onPressed: _commentError(_comment.text) != null
+                  ? null
+                  : () => Navigator.of(context).pop(_comment.text.trim()),
               icon: const Icon(Icons.close_rounded),
               label: const Text('Rechazar comprobante'),
             ),

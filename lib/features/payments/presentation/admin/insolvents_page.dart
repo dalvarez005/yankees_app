@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../../../app/app_colors.dart';
@@ -7,6 +5,8 @@ import '../../../../core/access/permissions.dart';
 import '../../../../core/format/formats.dart';
 import '../../../../core/widgets/app_ui.dart';
 import '../../../../core/widgets/feedback.dart';
+import '../../../../core/widgets/filter_bar.dart';
+import '../../../../core/widgets/paged_list.dart';
 import '../../../auth/data/app_user.dart';
 import '../../../categories/data/category_repository.dart';
 import '../../data/payment_models.dart';
@@ -24,47 +24,39 @@ class InsolventsPage extends StatefulWidget {
 }
 
 class _InsolventsPageState extends State<InsolventsPage> {
-  final _search = TextEditingController();
-  InsolventPage? _page;
   SolvencyReport? _report;
   List<Category> _categories = const [];
-  int? _categoryId;
-  String? _error;
+  String _search = '';
+  Map<String, Object?> _filters = const {};
   final _selected = <String>{};
   bool _sending = false;
-  Timer? _debounce;
+
+  /// Total que informa la API para el filtro actual (si lo manda).
+  int? _total;
+
+  late final _list = PagedController<InsolventUser>((page, pageSize) async {
+    final result = await PaymentsRepository.instance.insolventUsers(
+      categoryId: _filters['category'] as int?,
+      search: _search,
+      page: page,
+      pageSize: pageSize,
+    );
+    _total = result.totalRecords;
+    return result.users;
+  });
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _list.refresh();
     _loadReport();
     _loadCategories();
   }
 
   @override
   void dispose() {
-    _debounce?.cancel();
-    _search.dispose();
+    _list.dispose();
     super.dispose();
-  }
-
-  Future<void> _load() async {
-    setState(() => _error = null);
-    try {
-      final page = await PaymentsRepository.instance.insolventUsers(
-        categoryId: _categoryId,
-        search: _search.text,
-      );
-      if (!mounted) return;
-      setState(() {
-        _page = page;
-        // Solo quedan seleccionados los que siguen en la lista.
-        _selected.retainAll(page.users.map((u) => u.userId));
-      });
-    } on PaymentsException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    }
   }
 
   /// Si falla, la lista funciona igual sin el resumen.
@@ -88,24 +80,18 @@ class _InsolventsPageState extends State<InsolventsPage> {
     }
   }
 
-  void _setCategory(int? id) {
-    setState(() {
-      _categoryId = id;
-      _page = null;
-    });
-    _load();
+  Future<void> _load() async {
+    await _list.refresh(keepItems: true);
+    // Solo quedan seleccionados los que siguen en la lista.
+    final ids = {
+      for (final u in _list.items ?? const <InsolventUser>[]) u.userId,
+    };
+    if (mounted) setState(() => _selected.retainAll(ids));
   }
-
-  void _onSearch(String _) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), _load);
-  }
-
-  Future<void> _refresh() => Future.wait([_load(), _loadReport()]);
 
   /// [ids] null = todos los insolventes del club.
   Future<void> _notify(List<String>? ids) async {
-    final total = ids?.length ?? _report?.insolventUsers ?? _page?.totalRecords;
+    final total = ids?.length ?? _report?.insolventUsers ?? _total;
     final who = ids == null
         ? 'todos los insolventes${total == null ? '' : ' ($total)'}'
         : ids.length == 1
@@ -154,93 +140,60 @@ class _InsolventsPageState extends State<InsolventsPage> {
     }
   }
 
-  Widget _chip(String label, int? id) {
-    final selected = _categoryId == id;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => _setCategory(id),
-        selectedColor: AppColors.navy,
-        labelStyle: TextStyle(
-          color: selected ? Colors.white : AppColors.text,
-          fontWeight: FontWeight.w500,
-        ),
-        showCheckmark: false,
-        side: const BorderSide(color: AppColors.border),
-        backgroundColor: AppColors.surface,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (!widget.user.can(Permissions.paymentsManage)) {
       return const NoAccessView();
     }
-    final users = _page?.users;
-    final allSelected =
-        users != null &&
-        users.isNotEmpty &&
-        users.every((u) => _selected.contains(u.userId));
     return Scaffold(
       appBar: pageAppBar(context, 'Insolventes'),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: TextField(
-              controller: _search,
-              textInputAction: TextInputAction.search,
-              onChanged: _onSearch,
-              onSubmitted: (_) => _load(),
-              decoration: InputDecoration(
-                hintText: 'Buscar por nombre o correo',
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                suffixIcon: IconButton(
-                  tooltip: 'Limpiar',
-                  icon: const Icon(Icons.close_rounded, size: 20),
-                  onPressed: () {
-                    _search.clear();
-                    _load();
-                  },
+          FilterBar(
+            searchHint: 'Buscar por nombre o correo',
+            filters: [
+              if (_categories.isNotEmpty)
+                FilterSpec(
+                  key: 'category',
+                  title: 'Categoría de sus hijos',
+                  icon: Icons.sports_baseball_outlined,
+                  choices: [
+                    for (final c in _categories) FilterChoice(c.id, c.name),
+                  ],
                 ),
-              ),
-            ),
+            ],
+            values: _filters,
+            search: _search,
+            onChanged: (search, values) {
+              setState(() {
+                _search = search;
+                _filters = values;
+                _selected.clear();
+              });
+              _list.refresh();
+            },
           ),
-          if (_categories.isNotEmpty)
-            SizedBox(
-              height: 48,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                children: [
-                  _chip('Todas', null),
-                  for (final c in _categories) _chip(c.name, c.id),
-                ],
-              ),
-            ),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: _refresh,
-              color: AppColors.navy,
-              child: AsyncListView(
-                loading: users == null,
-                error: _error,
-                onRetry: _load,
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                header: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (_report != null) _ReportCard(report: _report!),
-                    if (users != null && users.isNotEmpty)
+            child: ListenableBuilder(
+              listenable: _list,
+              builder: (context, _) {
+                final users = _list.items ?? const <InsolventUser>[];
+                final allSelected =
+                    users.isNotEmpty &&
+                    users.every((u) => _selected.contains(u.userId));
+                return PagedListView<InsolventUser>(
+                  controller: _list,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  header: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_report != null) _ReportCard(report: _report!),
                       Row(
                         children: [
                           Expanded(
                             child: ListHeader(
                               'Con pagos vencidos',
-                              count: users.length,
+                              count: _total ?? users.length,
                             ),
                           ),
                           TextButton(
@@ -254,34 +207,32 @@ class _InsolventsPageState extends State<InsolventsPage> {
                             child: Text(
                               allSelected
                                   ? 'Quitar selección'
-                                  : 'Seleccionar todos',
+                                  : 'Seleccionar visibles',
                             ),
                           ),
                         ],
                       ),
-                  ],
-                ),
-                empty: EmptyState(
-                  icon: Icons.verified_rounded,
-                  title: 'Nadie con pagos vencidos',
-                  message: _categoryId == null && _search.text.trim().isEmpty
-                      ? 'Todas las familias están al día.'
-                      : 'Ninguna familia con pagos vencidos coincide con el '
-                            'filtro.',
-                ),
-                children: [
-                  for (final u in users ?? const <InsolventUser>[])
-                    _InsolventTile(
-                      user: u,
-                      selected: _selected.contains(u.userId),
-                      onChanged: (v) => setState(
-                        () => v
-                            ? _selected.add(u.userId)
-                            : _selected.remove(u.userId),
-                      ),
+                    ],
+                  ),
+                  empty: EmptyState(
+                    icon: Icons.verified_rounded,
+                    title: 'Nadie con pagos vencidos',
+                    message: _filters.isEmpty && _search.isEmpty
+                        ? 'Todas las familias están al día.'
+                        : 'Ninguna familia con pagos vencidos coincide con '
+                              'la búsqueda o el filtro.',
+                  ),
+                  itemBuilder: (context, u) => _InsolventTile(
+                    user: u,
+                    selected: _selected.contains(u.userId),
+                    onChanged: (v) => setState(
+                      () => v
+                          ? _selected.add(u.userId)
+                          : _selected.remove(u.userId),
                     ),
-                ],
-              ),
+                  ),
+                );
+              },
             ),
           ),
         ],
@@ -289,21 +240,26 @@ class _InsolventsPageState extends State<InsolventsPage> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: _selected.isEmpty
-              ? FilledButton.icon(
-                  onPressed: _sending || (users?.isEmpty ?? true)
-                      ? null
-                      : () => _notify(null),
-                  icon: const Icon(Icons.campaign_rounded),
-                  label: const Text('Notificar a todos los insolventes'),
-                )
-              : FilledButton.icon(
-                  onPressed: _sending
-                      ? null
-                      : () => _notify(_selected.toList()),
-                  icon: const Icon(Icons.notifications_active_rounded),
-                  label: Text('Notificar seleccionados (${_selected.length})'),
-                ),
+          child: ListenableBuilder(
+            listenable: _list,
+            builder: (context, _) => _selected.isEmpty
+                ? FilledButton.icon(
+                    onPressed: _sending || (_list.items?.isEmpty ?? true)
+                        ? null
+                        : () => _notify(null),
+                    icon: const Icon(Icons.campaign_rounded),
+                    label: const Text('Notificar a todos los insolventes'),
+                  )
+                : FilledButton.icon(
+                    onPressed: _sending
+                        ? null
+                        : () => _notify(_selected.toList()),
+                    icon: const Icon(Icons.notifications_active_rounded),
+                    label: Text(
+                      'Notificar seleccionados (${_selected.length})',
+                    ),
+                  ),
+          ),
         ),
       ),
     );

@@ -589,6 +589,18 @@ void main() {
       });
       await r.markAsRead(all: true);
       expect(sent(), {'all': true});
+
+      // Registro del teléfono para push.
+      body = {
+        'responseCode': '00',
+        'responseMessage': 'DISPOSITIVO REGISTRADO',
+      };
+      await r.registerDevice('tok-fcm', 'android');
+      expect(requests.last.url.path, '/api/Notification/RegisterDevice');
+      expect(sent(), {'token': 'tok-fcm', 'platform': 'android'});
+      await r.unregisterDevice('tok-fcm');
+      expect(requests.last.url.path, '/api/Notification/UnregisterDevice');
+      expect(sent(), {'token': 'tok-fcm'});
     });
 
     test('jugadores: filtros a la API y datos del padre', () async {

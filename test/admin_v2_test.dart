@@ -28,7 +28,13 @@ class _FakePlayers extends UnavailableAdminRepository {
   final calls = <(int?, String?)>[];
 
   @override
-  Future<List<Player>> players({int? categoryId, String? search}) async {
+  Future<List<Player>> players({
+    int? categoryId,
+    String? search,
+    int? page,
+    int pageSize = 100,
+  }) async {
+    if ((page ?? 1) > 1) return const [];
     calls.add((categoryId, search));
     return [
       const Player(
@@ -104,9 +110,14 @@ void main() {
       expect(find.text('Solvente'), findsOneWidget);
       expect(find.textContaining('Luis Istacuy'), findsOneWidget);
 
-      // Chip de categoría activa (id 2 = Preinfantil en el mock).
+      // Filtros → categoría (id 2 = Preinfantil en el mock) → Aplicar.
+      await tester.tap(find.text('Filtros'));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(ChoiceChip, 'Preinfantil'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Aplicar 1 filtro'));
+      await tester.pumpAndSettle();
+      expect(find.text('Filtros · 1'), findsOneWidget);
       expect(repo.calls.last, (2, ''));
       expect(find.text('Sara Gómez'), findsNothing);
 
@@ -201,7 +212,11 @@ void main() {
     testWidgets('filtro por categoría', (tester) async {
       await pump(tester);
       // Luis tiene un hijo en la categoría 2 (Preinfantil); Ana en 2 y 3.
+      await tester.tap(find.text('Filtros'));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(ChoiceChip, 'Infantil'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Aplicar 1 filtro'));
       await tester.pumpAndSettle();
       expect(find.text('Luis Istacuy'), findsNothing);
       expect(find.text('Ana Gómez'), findsOneWidget);

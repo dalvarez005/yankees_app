@@ -1,4 +1,5 @@
 import '../../../core/network/api_client.dart';
+import '../../../core/paging/page_of.dart';
 import 'payment_models.dart';
 
 class PaymentsException implements Exception {
@@ -30,7 +31,7 @@ abstract class PaymentsRepository {
 
   // ---- Validación (pagos.validar)
   /// Cobros con comprobante en revisión (más antiguos primero).
-  Future<List<Charge>> reviewQueue();
+  Future<List<Charge>> reviewQueue({int page = 1, int pageSize = 100});
 
   /// [comment] es obligatorio al rechazar (10 a 500 caracteres).
   Future<Charge> reviewVoucher(
@@ -45,9 +46,16 @@ abstract class PaymentsRepository {
     ChargeType? type,
     String? period,
     String? search,
+    int page = 1,
+    int pageSize = 100,
   });
   Future<Charge> cancelCharge(String chargeId);
-  Future<InsolventPage> insolventUsers({int? categoryId, String? search});
+  Future<InsolventPage> insolventUsers({
+    int? categoryId,
+    String? search,
+    int page = 1,
+    int pageSize = 100,
+  });
 
   /// Sin [userIds] notifica a todos los insolventes.
   Future<NotifyResult> notifyInsolvents({
@@ -112,9 +120,14 @@ class ApiPaymentsRepository implements PaymentsRepository {
   }
 
   @override
-  Future<List<Charge>> reviewQueue() async => _charges(
-    await _call(() => _api.get('$_base/GetPendingReviews?page=1&pageSize=100')),
-  );
+  Future<List<Charge>> reviewQueue({int page = 1, int pageSize = 100}) async =>
+      _charges(
+        await _call(
+          () => _api.get(
+            '$_base/GetPendingReviews?page=$page&pageSize=$pageSize',
+          ),
+        ),
+      );
 
   @override
   Future<Charge> reviewVoucher(
@@ -139,14 +152,16 @@ class ApiPaymentsRepository implements PaymentsRepository {
     ChargeType? type,
     String? period,
     String? search,
+    int page = 1,
+    int pageSize = 100,
   }) async {
     final q = {
       'status': ?status?.code,
       'type': ?type?.code,
       'period': ?period,
       if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
-      'page': '1',
-      'pageSize': '100',
+      'page': '$page',
+      'pageSize': '$pageSize',
     };
     final path = Uri(path: '$_base/GetChargeData', queryParameters: q);
     return _charges(await _call(() => _api.get(path.toString())));
@@ -161,12 +176,14 @@ class ApiPaymentsRepository implements PaymentsRepository {
   Future<InsolventPage> insolventUsers({
     int? categoryId,
     String? search,
+    int page = 1,
+    int pageSize = 100,
   }) async {
     final q = {
       'categoryId': ?categoryId?.toString(),
       if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
-      'page': '1',
-      'pageSize': '100',
+      'page': '$page',
+      'pageSize': '$pageSize',
     };
     final path = Uri(path: '$_base/GetInsolventUsers', queryParameters: q);
     final json = await _call(() => _api.get(path.toString()));
@@ -426,10 +443,11 @@ class MockPaymentsRepository implements PaymentsRepository {
   }
 
   @override
-  Future<List<Charge>> reviewQueue() async {
+  Future<List<Charge>> reviewQueue({int page = 1, int pageSize = 100}) async {
     await _wait();
-    return [..._charges.where((c) => c.status == ChargeStatus.inReview)]
+    final all = [..._charges.where((c) => c.status == ChargeStatus.inReview)]
       ..sort((a, b) => a.voucher!.uploadedAt.compareTo(b.voucher!.uploadedAt));
+    return pageOf(all, page, pageSize);
   }
 
   @override
@@ -479,10 +497,12 @@ class MockPaymentsRepository implements PaymentsRepository {
     ChargeType? type,
     String? period,
     String? search,
+    int page = 1,
+    int pageSize = 100,
   }) async {
     await _wait();
     final q = search?.trim().toLowerCase() ?? '';
-    return [
+    final all = [
       ..._charges.where(
         (c) =>
             (status == null || c.status == status) &&
@@ -494,6 +514,7 @@ class MockPaymentsRepository implements PaymentsRepository {
                 c.concept.toLowerCase().contains(q)),
       ),
     ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return pageOf(all, page, pageSize);
   }
 
   @override
@@ -545,6 +566,8 @@ class MockPaymentsRepository implements PaymentsRepository {
   Future<InsolventPage> insolventUsers({
     int? categoryId,
     String? search,
+    int page = 1,
+    int pageSize = 100,
   }) async {
     await _wait();
     final q = search?.trim().toLowerCase() ?? '';
@@ -557,7 +580,11 @@ class MockPaymentsRepository implements PaymentsRepository {
                 u.email.toLowerCase().contains(q)))
           u,
     ];
-    return InsolventPage(users: users, totalRecords: users.length);
+    return InsolventPage(
+      users: pageOf(users, page, pageSize),
+      totalRecords: users.length,
+      hasNext: page * pageSize < users.length,
+    );
   }
 
   @override

@@ -8,6 +8,7 @@ import '../../auth/data/app_user.dart';
 import '../../auth/presentation/widgets/auth_field.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
 import '../data/admin_repository.dart';
+import '../../../core/widgets/form_ready.dart';
 
 /// Roles y sus permisos: solo SUPER_ADMIN (la API lo valida por rol).
 class RolesPage extends StatefulWidget {
@@ -204,7 +205,7 @@ class RoleFormPage extends StatefulWidget {
   State<RoleFormPage> createState() => _RoleFormPageState();
 }
 
-class _RoleFormPageState extends State<RoleFormPage> {
+class _RoleFormPageState extends State<RoleFormPage> with FormReady {
   final _formKey = GlobalKey<FormState>();
   late final _name = TextEditingController(text: widget.role?.name);
   late final Set<String> _selected = {...?widget.role?.permissions};
@@ -212,6 +213,19 @@ class _RoleFormPageState extends State<RoleFormPage> {
 
   Role? get _role => widget.role;
   bool get _readOnlyPermissions => _role?.isSuperAdmin ?? false;
+
+  static String? _nameError(String? v) {
+    final t = v?.trim() ?? '';
+    if (t.isEmpty) return 'El nombre es obligatorio';
+    if (t.length > 60) return 'Máximo 60 caracteres';
+    return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    watchFields([_name]);
+  }
 
   @override
   void dispose() {
@@ -264,6 +278,7 @@ class _RoleFormPageState extends State<RoleFormPage> {
       ),
       body: Form(
         key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
           children: [
@@ -286,12 +301,7 @@ class _RoleFormPageState extends State<RoleFormPage> {
               controller: _name,
               textCapitalization: TextCapitalization.sentences,
               enabled: !(_role?.isSystem ?? false),
-              validator: (v) {
-                final t = v?.trim() ?? '';
-                if (t.isEmpty) return 'El nombre es obligatorio';
-                if (t.length > 60) return 'Máximo 60 caracteres';
-                return null;
-              },
+              validator: _nameError,
             ),
             const SizedBox(height: 24),
             Text(
@@ -333,7 +343,11 @@ class _RoleFormPageState extends State<RoleFormPage> {
                 ),
             ],
             const SizedBox(height: 24),
-            LoadingButton(label: 'Guardar', loading: _saving, onPressed: _save),
+            LoadingButton(
+              label: 'Guardar',
+              loading: _saving,
+              onPressed: _nameError(_name.text) == null ? _save : null,
+            ),
           ],
         ),
       ),

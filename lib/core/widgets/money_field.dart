@@ -8,6 +8,20 @@ double? parseMoney(String? text) =>
     double.tryParse((text ?? '').trim().replaceAll(',', ''));
 
 /// Texto inicial de un campo de monto: "150" o "150.50".
+/// Error de un monto escrito, o null si es válido. Es el validador de
+/// [MoneyField]; también sirve para saber si un formulario está completo.
+String? moneyError(String? v, {bool allowZero = false}) {
+  if ((v ?? '').trim().isEmpty) return 'Escribe el monto';
+  final amount = parseMoney(v);
+  if (amount == null) return 'Monto inválido';
+  if (allowZero ? amount < 0 : amount <= 0) {
+    return allowZero ? 'No puede ser negativo' : 'Debe ser mayor a 0';
+  }
+  if (amount > 100000) return 'Máximo Q 100,000';
+  if (RegExp(r'\.\d{3,}$').hasMatch(v!.trim())) return 'Máximo 2 decimales';
+  return null;
+}
+
 String moneyText(double? amount) {
   if (amount == null) return '';
   return amount == amount.roundToDouble()
@@ -49,18 +63,8 @@ class MoneyField extends StatelessWidget {
       FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
       LengthLimitingTextInputFormatter(12),
     ],
-    validator: (v) {
-      if ((v ?? '').trim().isEmpty) return 'Escribe el monto';
-      final amount = parseMoney(v);
-      if (amount == null) return 'Monto inválido';
-      if (allowZero ? amount < 0 : amount <= 0) {
-        return allowZero ? 'No puede ser negativo' : 'Debe ser mayor a 0';
-      }
-      if (amount > 100000) return 'Máximo Q 100,000';
-      if (RegExp(r'\.\d{3,}$').hasMatch(v!.trim())) {
-        return 'Máximo 2 decimales';
-      }
-      return extraValidator?.call(amount);
-    },
+    validator: (v) =>
+        moneyError(v, allowZero: allowZero) ??
+        extraValidator?.call(parseMoney(v)!),
   );
 }

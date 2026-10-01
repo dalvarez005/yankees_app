@@ -195,21 +195,43 @@ DateTime? _exifDate(String v) {
   return DateTime(p[0], p[1], p[2], p[3], p[4], p[5]);
 }
 
-/// Lo que el OCR sugiere para el formulario.
+/// Lo que se pudo leer del comprobante.
 class OcrSuggestions {
-  const OcrSuggestions({this.reference, this.amounts = const []});
+  const OcrSuggestions({this.reference, this.amounts = const [], this.date});
 
-  /// Número de boleta/transferencia junto a una palabra clave.
+  /// Número de boleta, autorización o transferencia.
   final String? reference;
 
   /// Montos en quetzales que aparecen en la foto.
   final List<double> amounts;
+
+  /// Fecha de la operación.
+  final DateTime? date;
+
+  /// Un comprobante legible deja ver al menos su fecha y su número.
+  bool get readable => reference != null && date != null;
+
+  /// Lo que no se distinguió, para pedir otra foto ("la fecha", …).
+  List<String> get missing => [
+    if (date == null) 'la fecha',
+    if (reference == null) 'el número de boleta o autorización',
+  ];
 }
 
-final _referencePattern = RegExp(
-  r'(?:boleta|referencia|ref|autorizaci[oó]n|transacci[oó]n|documento|'
-  r'comprobante|operaci[oó]n)\s*(?:no\.?|n[uú]m(?:ero)?\.?|#)?\s*[:#.]?\s*'
-  r'([A-Z0-9][A-Z0-9-]{3,59})',
+/// Palabras que anteceden al número de la operación, en español e inglés
+/// (las apps de los bancos se usan en ambos idiomas).
+final _referenceKeyword = RegExp(
+  r'boleta|referencia|\bref\b|autorizaci[oó]n|authori[sz]ation|'
+  r'transacci[oó]n|transaction|\bdocumento\b|\bdocument\b|comprobante|'
+  r'operaci[oó]n|confirmaci[oó]n|confirmation|\breference\b|\breceipt\b|'
+  r'\bvoucher\b|gesti[oó]n|\bfolio\b|\bticket\b|\btracking\b',
+  caseSensitive: false,
+);
+
+/// Líneas que hablan de cuentas: sus números no son la referencia.
+final _accountLine = RegExp(
+  r'cuenta|account|\bGTQ\s*-|\bUSD\s*-|monetaria|ahorro|savings|checking|'
+  r'\bNIT\b|tel[eé]fono|phone|\bDPI\b|\bCUI\b',
   caseSensitive: false,
 );
 
@@ -218,22 +240,257 @@ final _amountPattern = RegExp(
   caseSensitive: false,
 );
 
-OcrSuggestions suggestFromOcr(String text) {
+/// Candidatos a referencia en un texto: alfanuméricos con 4+ dígitos que no
+/// son fecha, hora, monto ni número de cuenta.
+Iterable<String> _referenceTokens(String text) sync* {
+  for (final m in RegExp(
+    r'[A-Z0-9][A-Z0-9-]{3,59}',
+    caseSensitive: false,
+  ).allMatches(text)) {
+    final token = m.group(0)!;
+    if (RegExp(r'\d').allMatches(token).length < 4) continue;
+    // 29-09-2026 o 29-SEP-2026 son fechas, no referencias.
+    if (_numericDate.hasMatch(token) ||
+        _isoDate.hasMatch(token) ||
+        _dayMonthName.hasMatch(token)) {
+      continue;
+    }
+    final before = text.substring(0, m.start);
+    final after = text.substring(m.end);
+    // 29/09/26, 10:43:44, 100.00 o 1,150.00 no son referencias.
+    if (RegExp(r'\d[/:.,]$').hasMatch(before)) continue;
+    if (RegExp(r'^[/:]\d').hasMatch(after)) continue;
+    if (RegExp(r'^[.,]\d').hasMatch(after)) continue;
+    // "GTQ-5550047228", "Q 100".
+    if (RegExp(
+      r'(?:GTQ|USD|Q)\s*-?\s*$',
+      caseSensitive: false,
+    ).hasMatch(before)) {
+      continue;
+    }
+    if (RegExp(r'^(?:GTQ|USD)-', caseSensitive: false).hasMatch(token)) {
+      continue;
+    }
+    yield token.toUpperCase();
+  }
+}
+
+/// [now] permite fijar la fecha de hoy en las pruebas.
+OcrSuggestions suggestFromOcr(String text, {DateTime? now}) {
+  final lines = [
+    for (final l in text.split(RegExp(r'[\r\n]+')))
+      if (l.trim().isNotEmpty) l.trim(),
+  ];
+
+  // 1) Junto a una palabra clave: en lo que sigue de esa línea o en las dos
+  //    siguientes (el OCR suele separar la etiqueta del valor).
   String? reference;
-  for (final m in _referencePattern.allMatches(text)) {
-    final token = m.group(1)!;
-    // Al menos 4 dígitos: descarta palabras sueltas.
-    if (RegExp(r'\d').allMatches(token).length >= 4) {
-      reference = token.toUpperCase();
+  outer:
+  for (var i = 0; i < lines.length; i++) {
+    final keyword = _referenceKeyword.firstMatch(lines[i]);
+    if (keyword == null) continue;
+    final sameLine = _referenceTokens(lines[i].substring(keyword.end));
+    if (sameLine.isNotEmpty) {
+      reference = sameLine.first;
       break;
     }
+    for (var j = i + 1; j < lines.length && j <= i + 2; j++) {
+      if (_accountLine.hasMatch(lines[j])) break;
+      final next = _referenceTokens(lines[j]);
+      if (next.isNotEmpty) {
+        reference = next.first;
+        break outer;
+      }
+    }
   }
+
+  // 2) Sin palabra clave legible: el primer número largo (6+ dígitos) que
+  //    esté solo en su línea y no sea de una cuenta.
+  if (reference == null) {
+    for (var i = 0; i < lines.length; i++) {
+      if (_accountLine.hasMatch(lines[i])) continue;
+      if (i > 0 &&
+          _accountLine.hasMatch(lines[i - 1]) &&
+          !RegExp(r'\d').hasMatch(lines[i - 1])) {
+        continue;
+      }
+      final tokens = _referenceTokens(lines[i]).toList();
+      if (tokens.length == 1 &&
+          tokens.single.length == lines[i].length &&
+          RegExp(r'\d').allMatches(tokens.single).length >= 6) {
+        reference = tokens.single;
+        break;
+      }
+    }
+  }
+
   final amounts = [
     for (final m in _amountPattern.allMatches(text))
       ?double.tryParse(m.group(1)!.replaceAll(',', '')),
   ];
-  return OcrSuggestions(reference: reference, amounts: amounts);
+  return OcrSuggestions(
+    reference: reference,
+    amounts: amounts,
+    date: _dateFrom(text, now: now),
+  );
 }
+
+/// Meses en español e inglés, completos y abreviados.
+const _months = {
+  'ene': 1,
+  'enero': 1,
+  'jan': 1,
+  'january': 1,
+  'feb': 2,
+  'febrero': 2,
+  'february': 2,
+  'mar': 3,
+  'marzo': 3,
+  'march': 3,
+  'abr': 4,
+  'abril': 4,
+  'apr': 4,
+  'april': 4,
+  'may': 5,
+  'mayo': 5,
+  'jun': 6,
+  'junio': 6,
+  'june': 6,
+  'jul': 7,
+  'julio': 7,
+  'july': 7,
+  'ago': 8,
+  'agosto': 8,
+  'aug': 8,
+  'august': 8,
+  'sep': 9,
+  'sept': 9,
+  'set': 9,
+  'septiembre': 9,
+  'setiembre': 9,
+  'september': 9,
+  'oct': 10,
+  'octubre': 10,
+  'october': 10,
+  'nov': 11,
+  'noviembre': 11,
+  'november': 11,
+  'dic': 12,
+  'diciembre': 12,
+  'dec': 12,
+  'december': 12,
+};
+
+/// 29/09/26, 29-09-2026, 29.09.2026 (día primero, como en Guatemala).
+final _numericDate = RegExp(
+  r'(?<!\d)(\d{1,2})\s?[/\-.]\s?(\d{1,2})\s?[/\-.]\s?(\d{4}|\d{2})(?!\d)',
+);
+
+/// 2026-09-29.
+final _isoDate = RegExp(
+  r'(?<!\d)(\d{4})\s?[/\-.]\s?(\d{1,2})\s?[/\-.]\s?(\d{1,2})(?!\d)',
+);
+
+/// 29 de septiembre de 2026, 29 SEP 2026, 29/Sep/26, 29-sept.-2026.
+final _dayMonthName = RegExp(
+  r'(?<!\d)(\d{1,2})\s*(?:de\s+|[/\-.\s]\s*)([A-Za-zÁÉÍÓÚáéíóú]{3,10})\.?'
+  r'\s*(?:de\s+|del\s+|[/\-.,\s]\s*)(\d{4}|\d{2})(?!\d)',
+  caseSensitive: false,
+);
+
+/// September 29, 2026 / Sep 29 2026.
+final _monthNameDay = RegExp(
+  r'\b([A-Za-z]{3,10})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})(?!\d)',
+  caseSensitive: false,
+);
+
+final _dateLabel = RegExp(
+  r'\bfecha\b|\bdate\b|\bemitid|\bissued',
+  caseSensitive: false,
+);
+
+/// Fecha real, no futura y de los últimos 400 días; si no, null.
+DateTime? _validDate(int year, int month, int day, DateTime now) {
+  if (year < 100) year += 2000;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  final date = DateTime(year, month, day);
+  if (date.month != month || date.day != day) return null;
+  // Un día de margen por la zona horaria del teléfono.
+  if (date.isAfter(now.add(const Duration(days: 1)))) return null;
+  if (now.difference(date).inDays > 400) return null;
+  return date;
+}
+
+/// Fecha de la operación en el texto del comprobante. Si hay varias se
+/// prefiere la que acompaña a "Fecha"/"Date"; si no, la primera.
+DateTime? _dateFrom(String text, {DateTime? now}) {
+  final today = now ?? DateTime.now();
+  final found = <({int start, DateTime date})>[];
+
+  void add(int start, DateTime? date) {
+    if (date != null) found.add((start: start, date: date));
+  }
+
+  for (final m in _isoDate.allMatches(text)) {
+    add(
+      m.start,
+      _validDate(
+        int.parse(m.group(1)!),
+        int.parse(m.group(2)!),
+        int.parse(m.group(3)!),
+        today,
+      ),
+    );
+  }
+  for (final m in _numericDate.allMatches(text)) {
+    final a = int.parse(m.group(1)!);
+    final b = int.parse(m.group(2)!);
+    final year = int.parse(m.group(3)!);
+    // Día/mes; si no puede ser (13/25/2026 no existe), mes/día.
+    add(
+      m.start,
+      _validDate(year, b, a, today) ?? _validDate(year, a, b, today),
+    );
+  }
+  for (final m in _dayMonthName.allMatches(text)) {
+    final month = _months[_plain(m.group(2)!)];
+    if (month == null) continue;
+    add(
+      m.start,
+      _validDate(int.parse(m.group(3)!), month, int.parse(m.group(1)!), today),
+    );
+  }
+  for (final m in _monthNameDay.allMatches(text)) {
+    final month = _months[_plain(m.group(1)!)];
+    if (month == null) continue;
+    add(
+      m.start,
+      _validDate(int.parse(m.group(3)!), month, int.parse(m.group(2)!), today),
+    );
+  }
+  if (found.isEmpty) return null;
+  found.sort((x, y) => x.start.compareTo(y.start));
+
+  // Junto a su etiqueta: en la misma línea o justo debajo.
+  for (final label in _dateLabel.allMatches(text)) {
+    final rest = text.substring(label.end);
+    final lines = rest.split(RegExp(r'[\r\n]+'));
+    final reach = label.end + lines.take(2).join('\n').length;
+    for (final f in found) {
+      if (f.start >= label.end && f.start <= reach) return f.date;
+    }
+  }
+  return found.first.date;
+}
+
+/// "Septiembre" → "septiembre", "DIC" → "dic" (sin tildes).
+String _plain(String s) => s
+    .toLowerCase()
+    .replaceAll('á', 'a')
+    .replaceAll('é', 'e')
+    .replaceAll('í', 'i')
+    .replaceAll('ó', 'o')
+    .replaceAll('ú', 'u');
 
 /// Implementación real: `exif`, ML Kit y `flutter_image_compress`.
 class DeviceVoucherProcessor implements VoucherProcessor {

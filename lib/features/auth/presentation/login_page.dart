@@ -11,6 +11,7 @@ import 'widgets/auth_switch_link.dart';
 import 'widgets/google_button.dart';
 import 'widgets/loading_button.dart';
 import '../../../core/widgets/feedback.dart';
+import '../../../core/widgets/form_ready.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -19,7 +20,7 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _LoginPageState extends State<LoginPage> with FormReady {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _password = TextEditingController();
@@ -27,6 +28,16 @@ class _LoginPageState extends State<LoginPage> {
   bool _googleLoading = false;
 
   bool get _busy => _loading || _googleLoading;
+
+  bool get _ready =>
+      Validators.email(_email.text) == null &&
+      Validators.password(_password.text) == null;
+
+  @override
+  void initState() {
+    super.initState();
+    watchFields([_email, _password]);
+  }
 
   @override
   void dispose() {
@@ -104,6 +115,7 @@ class _LoginPageState extends State<LoginPage> {
                   padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
                   child: Form(
                     key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
                     child: AutofillGroup(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -140,7 +152,9 @@ class _LoginPageState extends State<LoginPage> {
                           LoadingButton(
                             label: 'Ingresar',
                             loading: _loading,
-                            onPressed: _googleLoading ? null : _submit,
+                            onPressed: _googleLoading || !_ready
+                                ? null
+                                : _submit,
                           ),
                           const OrDivider(),
                           GoogleButton(

@@ -8,6 +8,7 @@ import '../../auth/data/app_user.dart';
 import '../../auth/presentation/widgets/auth_field.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
 import '../data/category_repository.dart';
+import '../../../core/widgets/form_ready.dart';
 
 /// CRUD de categorías (requiere `categorias.gestionar`). Desactivar no borra,
 /// y la API no lo permite mientras algún hijo la tenga asignada.
@@ -212,10 +213,28 @@ class _CategoryForm extends StatefulWidget {
   State<_CategoryForm> createState() => _CategoryFormState();
 }
 
-class _CategoryFormState extends State<_CategoryForm> {
+class _CategoryFormState extends State<_CategoryForm> with FormReady {
   final _formKey = GlobalKey<FormState>();
   late final _name = TextEditingController(text: widget.category?.name);
   bool _saving = false;
+
+  static String? _nameError(String? v) {
+    final t = v?.trim() ?? '';
+    if (t.isEmpty) return 'El nombre es obligatorio';
+    if (t.length > 100) return 'Máximo 100 caracteres';
+    return null;
+  }
+
+  /// Completo y, al editar, distinto del nombre actual.
+  bool get _ready =>
+      _nameError(_name.text) == null &&
+      _name.text.trim() != (widget.category?.name ?? '');
+
+  @override
+  void initState() {
+    super.initState();
+    watchFields([_name]);
+  }
 
   @override
   void dispose() {
@@ -251,6 +270,7 @@ class _CategoryFormState extends State<_CategoryForm> {
       ),
       child: Form(
         key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -269,15 +289,14 @@ class _CategoryFormState extends State<_CategoryForm> {
               textCapitalization: TextCapitalization.sentences,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _save(),
-              validator: (v) {
-                final t = v?.trim() ?? '';
-                if (t.isEmpty) return 'El nombre es obligatorio';
-                if (t.length > 100) return 'Máximo 100 caracteres';
-                return null;
-              },
+              validator: _nameError,
             ),
             const SizedBox(height: 24),
-            LoadingButton(label: 'Guardar', loading: _saving, onPressed: _save),
+            LoadingButton(
+              label: 'Guardar',
+              loading: _saving,
+              onPressed: _ready ? _save : null,
+            ),
           ],
         ),
       ),

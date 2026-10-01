@@ -4,9 +4,7 @@ import '../../../app/app_colors.dart';
 import '../../../core/access/permissions.dart';
 import '../../../core/widgets/app_ui.dart';
 import '../../auth/data/app_user.dart';
-import '../../categories/data/category_repository.dart';
 import '../../categories/presentation/categories_admin_page.dart';
-import '../../family/data/dependent_repository.dart';
 import '../../family/presentation/family_page.dart';
 import '../../payments/data/payments_repository.dart';
 import '../../billing/data/billing_repository.dart';
@@ -17,7 +15,6 @@ import '../../payments/presentation/admin/insolvents_page.dart';
 import '../../payments/presentation/admin/payment_settings_page.dart';
 import '../../payments/presentation/admin/review_payments_page.dart';
 import '../../profile/presentation/profile_page.dart';
-import '../data/admin_repository.dart';
 import 'players_page.dart';
 import 'roles_page.dart';
 import 'users_page.dart';
@@ -56,7 +53,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
       }
     }
 
-    final admin = AdminRepository.instance;
     final payments = PaymentsRepository.instance;
     await Future.wait([
       if (_user.can(Permissions.paymentsReview))
@@ -70,22 +66,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
         load(
           'insolvent',
           () async => (await payments.solvencyReport()).insolventUsers,
-        ),
-      if (_user.can(Permissions.usersView))
-        load('users', () async => (await admin.users()).length),
-      if (_user.isSuperAdmin)
-        load('roles', () async => (await admin.roles()).length),
-      if (_user.can(Permissions.categoriesManage))
-        load(
-          'categories',
-          () async => (await CategoryRepository.instance.list())
-              .where((c) => c.active)
-              .length,
-        ),
-      if (_user.can(Permissions.ownDependents))
-        load(
-          'kids',
-          () async => (await DependentRepository.instance.list()).length,
         ),
     ]);
   }
@@ -109,24 +89,28 @@ class _AdminHomePageState extends State<AdminHomePage> {
     final pending = _stats['pending'] ?? 0;
     final insolvent = _stats['insolvent'] ?? 0;
     final stats = [
+      // Solo lo que espera una acción del administrador.
       if (_user.can(Permissions.paymentsReview))
-        _Stat('Por validar', _stats['reviews'], Icons.fact_check_rounded),
+        _Stat(
+          'Pagos por validar',
+          _stats['reviews'],
+          Icons.fact_check_rounded,
+          () => _open(ReviewPaymentsPage(user: _user)),
+        ),
       if (_user.can(Permissions.usersValidate))
         _Stat(
-          'Usuarios pendientes',
+          'Usuarios por validar',
           _stats['pending'],
           Icons.how_to_reg_rounded,
+          () => _open(PendingUsersPage(user: _user)),
         ),
       if (_user.can(Permissions.paymentsManage))
-        _Stat('Insolventes', _stats['insolvent'], Icons.warning_amber_rounded),
-      if (_user.can(Permissions.usersView))
-        _Stat('Cuentas', _stats['users'], Icons.people_alt_rounded),
-      if (_user.isSuperAdmin)
-        _Stat('Roles', _stats['roles'], Icons.shield_rounded),
-      if (_user.can(Permissions.categoriesManage))
-        _Stat('Categorías', _stats['categories'], Icons.sports_baseball),
-      if (_user.can(Permissions.ownDependents))
-        _Stat('Mis hijos', _stats['kids'], Icons.child_care_rounded),
+        _Stat(
+          'Insolventes',
+          _stats['insolvent'],
+          Icons.warning_amber_rounded,
+          () => _open(InsolventsPage(user: _user)),
+        ),
     ];
     final actions = [
       if (_user.can(Permissions.paymentsReview))
@@ -410,26 +394,34 @@ class _Header extends StatelessWidget {
               if (stats.isNotEmpty) ...[
                 const SizedBox(height: 22),
                 // Hasta 3 ocupan el ancho; con más se desliza de lado.
+                // IntrinsicHeight + stretch: todas del alto de la más alta,
+                // aunque una etiqueta ocupe dos líneas y otra una.
                 if (stats.length <= 3)
-                  Row(
-                    children: [
-                      for (final (i, s) in stats.indexed) ...[
-                        if (i > 0) const SizedBox(width: 10),
-                        Expanded(child: _StatTile(stat: s)),
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final (i, s) in stats.indexed) ...[
+                          if (i > 0) const SizedBox(width: 10),
+                          Expanded(child: _StatTile(stat: s)),
+                        ],
                       ],
-                    ],
+                    ),
                   )
                 else
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     clipBehavior: Clip.none,
-                    child: Row(
-                      children: [
-                        for (final (i, s) in stats.indexed) ...[
-                          if (i > 0) const SizedBox(width: 10),
-                          SizedBox(width: 104, child: _StatTile(stat: s)),
+                    child: IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final (i, s) in stats.indexed) ...[
+                            if (i > 0) const SizedBox(width: 10),
+                            SizedBox(width: 104, child: _StatTile(stat: s)),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
               ],
@@ -442,10 +434,13 @@ class _Header extends StatelessWidget {
 }
 
 class _Stat {
-  const _Stat(this.label, this.value, this.icon);
+  const _Stat(this.label, this.value, this.icon, this.onTap);
   final String label;
   final int? value;
   final IconData icon;
+
+  /// Lleva a la pantalla donde se atiende ese pendiente.
+  final VoidCallback onTap;
 }
 
 class _StatTile extends StatelessWidget {
@@ -454,42 +449,53 @@ class _StatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+    return Material(
+      color: Colors.white.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(stat.icon, color: Colors.white.withValues(alpha: 0.7), size: 18),
-          const SizedBox(height: 8),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 250),
-            child: Text(
-              stat.value?.toString() ?? '—',
-              key: ValueKey(stat.value),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                height: 1.1,
+        onTap: stat.onTap,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                stat.icon,
+                color: Colors.white.withValues(alpha: 0.7),
+                size: 18,
               ),
-            ),
+              const SizedBox(height: 8),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: Text(
+                  stat.value?.toString() ?? '—',
+                  key: ValueKey(stat.value),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    height: 1.1,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                stat.label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontSize: 11.5,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 2),
-          Text(
-            stat.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7),
-              fontSize: 11.5,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

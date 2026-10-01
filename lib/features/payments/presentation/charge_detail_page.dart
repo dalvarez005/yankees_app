@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +9,7 @@ import '../../../core/contact/whatsapp.dart';
 import '../../../core/format/formats.dart';
 import '../../../core/widgets/app_ui.dart';
 import '../../../core/widgets/feedback.dart';
+import '../../../core/widgets/whatsapp_logo.dart';
 import '../../../core/widgets/money_field.dart';
 import '../../auth/presentation/widgets/auth_field.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
@@ -237,36 +237,11 @@ class _StatusPanel extends StatelessWidget {
             'revisará y te avisaremos el resultado. Mientras tanto no '
             'cuenta como atrasado.',
       ),
-      ChargeStatus.rejected => _Panel(
-        color: AppColors.error,
-        icon: Icons.report_gmailerrorred_rounded,
-        title: 'Comprobante rechazado',
-        message: 'Motivo indicado por el club:',
-        quote: c.voucher?.reviewComment ?? 'Sin comentario.',
-        actions: [
-          FilledButton.icon(
-            onPressed: onContact,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF25D366),
-            ),
-            icon: const Icon(Icons.chat_rounded),
-            label: const Text('Contactar por WhatsApp'),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: onUpload,
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(50),
-              foregroundColor: AppColors.navy,
-              side: const BorderSide(color: AppColors.border),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            icon: const Icon(Icons.upload_rounded),
-            label: const Text('Subir otro comprobante'),
-          ),
-        ],
+      ChargeStatus.rejected => _RejectedPanel(
+        reason: c.voucher?.reviewComment,
+        reviewedAt: c.voucher?.reviewedAt,
+        onUpload: onUpload,
+        onContact: onContact,
       ),
       ChargeStatus.paid => _Panel(
         color: AppColors.success,
@@ -295,13 +270,122 @@ class _StatusPanel extends StatelessWidget {
   }
 }
 
+/// Comprobante rechazado: el motivo, la acción principal (subir otro) y,
+/// como último recurso, escribir al club por WhatsApp.
+class _RejectedPanel extends StatelessWidget {
+  const _RejectedPanel({
+    required this.reason,
+    required this.reviewedAt,
+    required this.onUpload,
+    required this.onContact,
+  });
+
+  final String? reason;
+  final DateTime? reviewedAt;
+  final VoidCallback onUpload;
+  final VoidCallback onContact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.assignment_late_outlined,
+                  color: AppColors.error,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Comprobante rechazado',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Text(
+                      reviewedAt == null
+                          ? 'El club no pudo validar tu pago.'
+                          : 'Revisado el ${formatDate(reviewedAt!)}',
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'MOTIVO',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text(
+              (reason ?? '').trim().isEmpty
+                  ? 'El club no dejó un comentario.'
+                  : reason!.trim(),
+              style: const TextStyle(height: 1.4),
+            ),
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: onUpload,
+            icon: const Icon(Icons.upload_rounded),
+            label: const Text('Subir otro comprobante'),
+          ),
+          const SizedBox(height: 4),
+          TextButton.icon(
+            onPressed: onContact,
+            style: TextButton.styleFrom(foregroundColor: AppColors.textMuted),
+            icon: const WhatsAppLogo(size: 18),
+            label: const Text('¿Tienes dudas? Escríbenos por WhatsApp'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Panel extends StatelessWidget {
   const _Panel({
     required this.color,
     required this.icon,
     required this.title,
     required this.message,
-    this.quote,
     this.actions = const [],
   });
 
@@ -309,7 +393,6 @@ class _Panel extends StatelessWidget {
   final IconData icon;
   final String title;
   final String message;
-  final String? quote;
   final List<Widget> actions;
 
   @override
@@ -342,24 +425,6 @@ class _Panel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(message, style: const TextStyle(color: AppColors.text)),
-          if (quote != null) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border(left: BorderSide(color: color, width: 4)),
-              ),
-              child: Text(
-                quote!,
-                style: const TextStyle(
-                  fontStyle: FontStyle.italic,
-                  height: 1.4,
-                ),
-              ),
-            ),
-          ],
           if (actions.isNotEmpty) ...[const SizedBox(height: 16), ...actions],
         ],
       ),
@@ -495,11 +560,66 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
   bool _analyzing = false;
   bool _photoMissing = false;
 
-  /// Lo que sugirió el OCR (para avisar al padre).
+  /// Lo que se leyó de la foto (para avisar al padre).
   bool _referenceSuggested = false;
+  bool _dateFromPhoto = false;
   List<double> _ocrAmounts = const [];
 
+  /// La foto actual no se pudo leer: qué faltó ("la fecha", …).
+  List<String> _unreadable = const [];
+
+  /// Fotos seguidas que no se pudieron leer.
+  int _failedReads = 0;
+
+  /// Tras dos intentos se permite llenar los datos a mano.
+  bool _manual = false;
+
   bool get _busy => _stage != null;
+
+  /// Hay que repetir la foto antes de poder enviar.
+  bool get _mustRetake => _unreadable.isNotEmpty && !_manual;
+
+  static String? _referenceError(String? v) {
+    final t = v?.trim() ?? '';
+    if (t.isEmpty) return 'Escribe el número de boleta';
+    if (t.length < 4) return 'Mínimo 4 caracteres';
+    if (!RegExp(r'^[A-Za-z0-9-]+$').hasMatch(t)) {
+      return 'Solo letras, números y guiones';
+    }
+    return null;
+  }
+
+  static String? _descriptionError(String? v) {
+    final t = v?.trim() ?? '';
+    if (t.isEmpty) return 'Escribe una descripción';
+    if (t.length < 5) return 'Mínimo 5 caracteres';
+    return null;
+  }
+
+  /// Todo lo obligatorio está completo y la foto se pudo leer.
+  bool get _ready {
+    final amount = parseMoney(_amount.text);
+    return _file != null &&
+        !_analyzing &&
+        !_mustRetake &&
+        amount != null &&
+        (amount - widget.charge.amount).abs() <= 0.001 &&
+        _referenceError(_reference.text) == null &&
+        _descriptionError(_description.text) == null &&
+        _paymentDate != null;
+  }
+
+  void _onFieldChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    for (final c in [_amount, _reference, _description]) {
+      c.addListener(_onFieldChanged);
+    }
+  }
 
   @override
   void dispose() {
@@ -560,9 +680,15 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
       _analysis = analysis;
       _analyzing = true;
       _ocrAmounts = const [];
+      _unreadable = const [];
+      // Lo leído de la foto anterior ya no vale.
       if (_referenceSuggested) {
         _reference.clear();
         _referenceSuggested = false;
+      }
+      if (_dateFromPhoto) {
+        _paymentDate = null;
+        _dateFromPhoto = false;
       }
     });
     unawaited(_applySuggestions(analysis));
@@ -577,13 +703,31 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
       return;
     }
     if (!mounted || _analysis != future) return;
-    final s = suggestFromOcr(a.ocrText ?? '');
+    // Sin OCR (plataforma sin ML Kit) no se puede exigir legibilidad.
+    final ocr = a.ocrText;
+    if (ocr == null) {
+      setState(() => _analyzing = false);
+      return;
+    }
+    final s = suggestFromOcr(ocr);
     setState(() {
       _analyzing = false;
       _ocrAmounts = s.amounts;
-      if (_reference.text.trim().isEmpty && s.reference != null) {
+      // La boleta y la fecha salen siempre del comprobante.
+      if (s.reference != null) {
         _reference.text = s.reference!;
         _referenceSuggested = true;
+      }
+      if (s.date != null) {
+        _paymentDate = s.date;
+        _dateFromPhoto = true;
+      }
+      if (s.readable) {
+        _unreadable = const [];
+        _failedReads = 0;
+      } else {
+        _unreadable = s.missing;
+        _failedReads++;
       }
     });
   }
@@ -598,7 +742,12 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
       lastDate: today,
       helpText: 'Fecha del depósito o transferencia',
     );
-    if (picked != null && mounted) setState(() => _paymentDate = picked);
+    if (picked != null && mounted) {
+      setState(() {
+        _paymentDate = picked;
+        _dateFromPhoto = false;
+      });
+    }
   }
 
   Future<void> _send() async {
@@ -673,6 +822,8 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
         appBar: pageAppBar(context, 'Subir comprobante'),
         body: Form(
           key: _formKey,
+          // Con el botón deshabilitado, el error se ve al escribir.
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
             children: [
@@ -713,6 +864,15 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
                   ],
                 ),
               ],
+              if (_mustRetake && !_analyzing) ...[
+                const SizedBox(height: 10),
+                _RetakePanel(
+                  missing: _unreadable,
+                  allowManual: _failedReads >= 2,
+                  onRetake: _busy ? null : _pick,
+                  onManual: () => setState(() => _manual = true),
+                ),
+              ],
               if (ocrMismatch) ...[
                 const SizedBox(height: 10),
                 _Hint(
@@ -744,15 +904,7 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
                   FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9-]')),
                   LengthLimitingTextInputFormatter(60),
                 ],
-                validator: (v) {
-                  final t = v?.trim() ?? '';
-                  if (t.isEmpty) return 'Escribe el número de boleta';
-                  if (t.length < 4) return 'Mínimo 4 caracteres';
-                  if (!RegExp(r'^[A-Za-z0-9-]+$').hasMatch(t)) {
-                    return 'Solo letras, números y guiones';
-                  }
-                  return null;
-                },
+                validator: _referenceError,
               ),
               if (_referenceSuggested)
                 const Padding(
@@ -771,15 +923,18 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
                 enabled: !_busy,
                 textCapitalization: TextCapitalization.sentences,
                 inputFormatters: [LengthLimitingTextInputFormatter(250)],
-                validator: (v) {
-                  final t = v?.trim() ?? '';
-                  if (t.isEmpty) return 'Escribe una descripción';
-                  if (t.length < 5) return 'Mínimo 5 caracteres';
-                  return null;
-                },
+                validator: _descriptionError,
               ),
               const SizedBox(height: 16),
               _DateField(value: _paymentDate, onTap: _busy ? null : _pickDate),
+              if (_dateFromPhoto)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6, left: 4),
+                  child: Text(
+                    'La leímos de la foto: verifica que sea correcta.',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  ),
+                ),
               const SizedBox(height: 24),
               if (_busy)
                 _ProgressSteps(stage: _stage!)
@@ -787,7 +942,8 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
                 LoadingButton(
                   label: 'Enviar comprobante',
                   loading: false,
-                  onPressed: _send,
+                  // Deshabilitado hasta completar todo lo obligatorio.
+                  onPressed: _ready ? _send : null,
                 ),
               const SizedBox(height: 10),
               const Text(
@@ -805,6 +961,72 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
   }
 }
 
+/// La foto no se pudo leer: pedir otra y, tras dos intentos, dejar llenar
+/// los datos a mano.
+class _RetakePanel extends StatelessWidget {
+  const _RetakePanel({
+    required this.missing,
+    required this.allowManual,
+    required this.onRetake,
+    required this.onManual,
+  });
+
+  final List<String> missing;
+  final bool allowManual;
+  final VoidCallback? onRetake;
+  final VoidCallback onManual;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.center_focus_weak_rounded, color: AppColors.error),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'No pudimos leer el comprobante',
+                  style: TextStyle(
+                    color: AppColors.error,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'No se distingue ${missing.join(' ni ')}. Repite la foto con '
+            'buena luz, sin sombras ni reflejos, y que el comprobante se '
+            'vea completo y derecho.',
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: onRetake,
+            icon: const Icon(Icons.photo_camera_outlined),
+            label: const Text('Repetir la foto'),
+          ),
+          if (allowManual)
+            TextButton(
+              onPressed: onManual,
+              child: const Text('No se lee mejor: llenar los datos a mano'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PhotoBox extends StatelessWidget {
   const _PhotoBox({
     required this.file,
@@ -814,85 +1036,83 @@ class _PhotoBox extends StatelessWidget {
 
   final XFile? file;
   final bool missing;
+
+  /// Elegir o cambiar la foto; null mientras se está subiendo.
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final f = file;
-    final borderColor = missing
-        ? AppColors.error
-        : f == null
-        ? AppColors.navy
-        : AppColors.border;
+    final color = missing ? AppColors.error : AppColors.navy;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: onTap,
-          child: Container(
-            height: 260,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
+        if (f == null)
+          Material(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(18),
+            child: InkWell(
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: borderColor,
-                width: f == null ? 1.5 : 1,
+              onTap: onTap,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: color, width: 1.5),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(Icons.add_a_photo_outlined, color: color),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Agregar foto del comprobante',
+                            style: TextStyle(
+                              color: color,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Que se lean el monto, la fecha y el número.',
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: color),
+                  ],
+                ),
               ),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: f == null
-                ? Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.add_a_photo_outlined,
-                        size: 44,
-                        color: missing ? AppColors.error : AppColors.navy,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Toca para agregar la foto del comprobante',
-                        style: TextStyle(
-                          color: missing ? AppColors.error : AppColors.navy,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Que se lean el monto, la fecha y el número.',
-                        style: TextStyle(color: AppColors.textMuted),
-                      ),
-                    ],
-                  )
-                : Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.file(
-                        File(f.path),
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const Center(
-                          child: Icon(
-                            Icons.image_outlined,
-                            color: AppColors.textMuted,
-                            size: 40,
-                          ),
-                        ),
-                      ),
-                      const Positioned(
-                        right: 10,
-                        bottom: 10,
-                        child: Pill(
-                          'Cambiar foto',
-                          filled: true,
-                          tone: PillTone.brand,
-                          icon: Icons.refresh_rounded,
-                        ),
-                      ),
-                    ],
-                  ),
+          )
+        else
+          ImageTile(
+            title: 'Foto lista',
+            subtitle: 'Revísala antes de enviar',
+            viewLabel: 'Ver',
+            onView: () => showImageViewer(
+              context,
+              title: 'Tu comprobante',
+              localPath: f.path,
+            ),
+            onChange: onTap,
           ),
-        ),
         if (missing)
           const Padding(
             padding: EdgeInsets.only(top: 6, left: 4),

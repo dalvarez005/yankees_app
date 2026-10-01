@@ -175,6 +175,141 @@ void main() {
       expect(s.amounts, [1150.0]);
     });
 
+    test('transferencia BI en español: código de autorización', () {
+      final s = suggestFromOcr(
+        'Tu transferencia fue realizada\ncon éxito\n29/09/26 10:43:44 PM\n'
+        'Código de autorización:\n29245441\nCuenta origen:\n'
+        'CHUPINA MENDEZ DIEGO ANDRE\nCUENTA MONETARIA BI\nGTQ-5550047228\n'
+        'Cuenta destino:\nsebastian\nCUENTA DE AHORRO BI\nGTQ-1114517\n'
+        'Monto:\nGTQ 100.00\nComentario:\nGracias por el prstamo',
+        now: DateTime(2026, 9, 30),
+      );
+      expect(s.reference, '29245441');
+      expect(s.amounts, [100.0]);
+      expect(s.date, DateTime(2026, 9, 29));
+    });
+
+    test('transferencia BI en inglés: authorization code', () {
+      final s = suggestFromOcr(
+        'Your transfer was made\nsuccessfully.\n10/09/26 06:44:56 PM\n'
+        'Authorization code:\n10275027\nAccount of origin:\n'
+        'ISTACUY CHUPINA\nSEBASTIAN ALEJANDRO\nSAVINGS ACCOUNT BI\n'
+        'GTQ-1114517\nDestination account:\nJORON\nCHECKING ACCOUNT BI\n'
+        'GTQ-1030134827\nAmount:\nGTQ 100.00',
+        now: DateTime(2026, 9, 30),
+      );
+      expect(s.reference, '10275027');
+      expect(s.amounts, [100.0]);
+      expect(s.date, DateTime(2026, 9, 10));
+    });
+
+    test('etiqueta y valor en la misma línea, con palabras de relleno', () {
+      expect(
+        suggestFromOcr('Reference number: TRX-99812\nAmount Q 50.00').reference,
+        'TRX-99812',
+      );
+      expect(
+        suggestFromOcr('No. de autorización 7781234').reference,
+        '7781234',
+      );
+    });
+
+    test('sin palabra clave: el número largo que no es cuenta ni fecha', () {
+      final s = suggestFromOcr(
+        'BANCO X\n03/10/2026 14:22\n445566778899\n'
+        'Cuenta destino\n3001234567\nGTQ 250.00',
+      );
+      expect(s.reference, '445566778899');
+    });
+
+    test('no confunde cuentas, montos ni fechas con la referencia', () {
+      final s = suggestFromOcr(
+        'Cuenta origen:\nGTQ-5550047228\nMonto:\nGTQ 1,500.00\n'
+        '29/09/2026',
+      );
+      expect(s.reference, isNull);
+    });
+
+    group('fecha del comprobante', () {
+      final now = DateTime(2026, 9, 30);
+      DateTime? date(String text) => suggestFromOcr(text, now: now).date;
+
+      test('numérica con /, - y . y año de 2 o 4 dígitos', () {
+        expect(date('29/09/26 10:43:44 PM'), DateTime(2026, 9, 29));
+        expect(date('Fecha: 29-09-2026'), DateTime(2026, 9, 29));
+        expect(date('29.09.2026'), DateTime(2026, 9, 29));
+        expect(date('5/9/2026'), DateTime(2026, 9, 5));
+        expect(date('2026-09-29 22:43'), DateTime(2026, 9, 29));
+      });
+
+      test('con el mes en letras, en español', () {
+        expect(date('29 de septiembre de 2026'), DateTime(2026, 9, 29));
+        expect(date('Guatemala, 3 de Agosto del 2026'), DateTime(2026, 8, 3));
+        expect(date('29 SEP 2026'), DateTime(2026, 9, 29));
+        expect(date('29/Sep/26'), DateTime(2026, 9, 29));
+        expect(date('05-dic-2025'), DateTime(2025, 12, 5));
+        expect(date('29 sept. 2026'), DateTime(2026, 9, 29));
+      });
+
+      test('con el mes en letras, en inglés', () {
+        expect(date('September 29, 2026'), DateTime(2026, 9, 29));
+        expect(date('Sep 29 2026 10:43 PM'), DateTime(2026, 9, 29));
+        expect(date('Aug 3rd, 2026'), DateTime(2026, 8, 3));
+        expect(date('29 August 2026'), DateTime(2026, 8, 29));
+      });
+
+      test('si el primer número no puede ser el día, es mes/día', () {
+        expect(date('09/29/2026'), DateTime(2026, 9, 29));
+      });
+
+      test('prefiere la que acompaña a "Fecha" o "Date"', () {
+        expect(
+          date('Válido hasta 01/01/2026\nFecha de operación:\n29/09/2026'),
+          DateTime(2026, 9, 29),
+        );
+        expect(
+          date('Printed 01/09/2026\nTransaction date 15/09/2026'),
+          DateTime(2026, 9, 15),
+        );
+      });
+
+      test('descarta fechas imposibles, futuras o muy viejas', () {
+        expect(date('31/02/2026'), isNull);
+        expect(date('15/10/2026'), isNull); // futura
+        expect(date('29/09/2020'), isNull); // de hace años
+        expect(date('Cuenta 30-01-234567'), isNull);
+      });
+
+      test('boleta impresa del banco (foto)', () {
+        final s = suggestFromOcr(
+          'BANCO INDUSTRIAL, S.A.\nAGENCIA CENTRAL\nDEPOSITO MONETARIO\n'
+          'FECHA 29/SEP/2026 HORA 14:22:10\nNo. DOCUMENTO 0045671238\n'
+          'CUENTA 300-123456-7\nNOMBRE CLUB YANKEES\n'
+          'EFECTIVO Q. 250.00\nTOTAL Q 250.00\nCAJERO 0871',
+          now: now,
+        );
+        expect(s.date, DateTime(2026, 9, 29));
+        expect(s.reference, '0045671238');
+        expect(s.amounts, contains(250.0));
+        expect(s.readable, isTrue);
+      });
+
+      test('una fecha con guiones no se toma como referencia', () {
+        final s = suggestFromOcr('29-SEP-2026\n29-09-2026', now: now);
+        expect(s.reference, isNull);
+        expect(s.date, DateTime(2026, 9, 29));
+      });
+    });
+
+    test('ilegible: dice qué falta', () {
+      final nothing = suggestFromOcr('borroso');
+      expect(nothing.readable, isFalse);
+      expect(nothing.missing, hasLength(2));
+      final noDate = suggestFromOcr('Boleta: 889231455');
+      expect(noDate.readable, isFalse);
+      expect(noDate.missing, ['la fecha']);
+    });
+
     test('sin texto útil no sugiere nada', () {
       final s = suggestFromOcr('hola');
       expect(s.reference, isNull);
@@ -228,78 +363,160 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('todos los campos y la foto son obligatorios', (tester) async {
-      processor = _FakeProcessor();
-      await pump(tester);
-      // El monto viene prellenado con el del cobro.
-      expect(find.text(charge.amount.toStringAsFixed(0)), findsOneWidget);
+    /// null = deshabilitado.
+    VoidCallback? sendAction(WidgetTester tester) => tester
+        .widget<FilledButton>(
+          find.widgetWithText(FilledButton, 'Enviar comprobante'),
+        )
+        .onPressed;
 
-      await send(tester);
-      expect(
-        find.text('La foto del comprobante es obligatoria'),
-        findsOneWidget,
+    /// Fecha reciente con el formato de los bancos (día/mes/año).
+    final paid = DateTime.now().subtract(const Duration(days: 2));
+    final paidText =
+        '${paid.day.toString().padLeft(2, '0')}/'
+        '${paid.month.toString().padLeft(2, '0')}/${paid.year}';
+
+    Future<void> setPhoto(WidgetTester tester) async {
+      final state = tester.state(find.byType(UploadVoucherPage));
+      (state as dynamic).setPhoto('/no/existe/boleta.jpg');
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> describe(WidgetTester tester, String text) async {
+      await tester.enterText(
+        find.widgetWithText(
+          TextFormField,
+          'Ej. Depósito Banrural ${charge.concept.toLowerCase()}',
+        ),
+        text,
       );
-      expect(find.text('Escribe el número de boleta'), findsOneWidget);
-      expect(find.text('Escribe una descripción'), findsOneWidget);
-      expect(find.text('Elige la fecha de pago'), findsOneWidget);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Enviar está deshabilitado hasta completar todo', (
+      tester,
+    ) async {
+      processor = _FakeProcessor(
+        ocrText: 'Banco Industrial\n$paidText\nReferencia: 55120993\nQ 250.00',
+      );
+      await pump(tester);
+      // El monto viene prellenado con el del cobro, pero falta lo demás.
+      expect(find.text(charge.amount.toStringAsFixed(0)), findsOneWidget);
+      expect(sendAction(tester), isNull);
+
+      // Con la foto leída sigue faltando la descripción.
+      await setPhoto(tester);
+      expect(sendAction(tester), isNull);
+
+      await describe(tester, 'Dep');
+      expect(find.text('Mínimo 5 caracteres'), findsOneWidget);
+      expect(sendAction(tester), isNull);
+
+      await describe(tester, 'Depósito BI inscripción');
+      expect(sendAction(tester), isNotNull);
       expect(payments.form, isNull);
-      await tester.pump(const Duration(seconds: 5));
     });
 
     testWidgets('el monto debe ser igual al del cobro', (tester) async {
-      processor = _FakeProcessor();
+      processor = _FakeProcessor(ocrText: 'Fecha $paidText\nBoleta 55120993');
       await pump(tester);
+      await setPhoto(tester);
+      await describe(tester, 'Depósito BI inscripción');
+      expect(sendAction(tester), isNotNull);
+
       await tester.enterText(find.byType(TextFormField).first, '1');
-      await send(tester);
+      await tester.pumpAndSettle();
       expect(
         find.text(
           'Debe ser igual al cobro (Q ${charge.amount.toStringAsFixed(2)})',
         ),
         findsOneWidget,
       );
-      await tester.pump(const Duration(seconds: 5));
+      expect(sendAction(tester), isNull);
     });
 
-    testWidgets('con la foto analiza, sugiere la boleta, comprime y sube', (
+    testWidgets('con la foto lee boleta y fecha, comprime y sube', (
       tester,
     ) async {
       processor = _FakeProcessor(
-        ocrText: 'Banco Industrial\nReferencia: 55120993\nQ 999.00',
+        ocrText:
+            'Banco Industrial\nDate: $paidText\nAuthorization code:\n'
+            '55120993\nQ 999.00',
         signals: const ['Software de edición: Snapseed'],
       );
       await pump(tester);
-      final state = tester.state(find.byType(UploadVoucherPage));
-      (state as dynamic).setPhoto('/no/existe/boleta.jpg');
-      await tester.pumpAndSettle();
+      await setPhoto(tester);
 
-      // La referencia se sugirió desde el OCR y se avisa del monto distinto.
+      // Boleta y fecha salen de la foto; se avisa del monto distinto.
       expect(find.text('55120993'), findsOneWidget);
+      expect(find.text('Selecciona la fecha'), findsNothing);
+      expect(find.textContaining('La leímos de la foto'), findsOneWidget);
       expect(find.textContaining('En la foto vemos Q 999.00'), findsOneWidget);
 
-      await tester.enterText(
-        find.widgetWithText(
-          TextFormField,
-          'Ej. Depósito Banrural '
-          '${charge.concept.toLowerCase()}',
-        ),
-        'Depósito BI inscripción',
-      );
-      await tester.ensureVisible(find.text('Selecciona la fecha'));
-      await tester.tap(find.text('Selecciona la fecha'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('OK'));
-      await tester.pumpAndSettle();
-
+      await describe(tester, 'Depósito BI inscripción');
       await send(tester);
       expect(processor.calls, ['analyze', 'compress']);
       expect(payments.form!.bankReference, '55120993');
       expect(payments.form!.amount, charge.amount);
       expect(payments.form!.description, 'Depósito BI inscripción');
+      expect(
+        payments.form!.paymentDate,
+        DateTime(paid.year, paid.month, paid.day),
+      );
       expect(payments.upload!.bytes, [1, 2, 3]);
       expect(payments.upload!.editSignals, ['Software de edición: Snapseed']);
       expect(payments.upload!.ocrText, contains('55120993'));
       // Volvió con el cobro en revisión.
       expect(find.byType(UploadVoucherPage), findsNothing);
+    });
+
+    testWidgets('foto ilegible: pide repetirla y bloquea el envío', (
+      tester,
+    ) async {
+      processor = _FakeProcessor(ocrText: 'bor r oso');
+      await pump(tester);
+      await setPhoto(tester);
+
+      expect(find.text('No pudimos leer el comprobante'), findsOneWidget);
+      expect(find.textContaining('la fecha ni el número'), findsOneWidget);
+      expect(find.text('Repetir la foto'), findsOneWidget);
+      // Al primer intento todavía no se ofrece llenar a mano.
+      expect(find.textContaining('llenar los datos a mano'), findsNothing);
+      await describe(tester, 'Depósito BI inscripción');
+      expect(sendAction(tester), isNull);
+
+      // Segundo intento fallido: se puede seguir a mano.
+      await setPhoto(tester);
+      final manual = find.textContaining('llenar los datos a mano');
+      await tester.ensureVisible(manual);
+      await tester.tap(manual);
+      await tester.pumpAndSettle();
+      expect(find.text('No pudimos leer el comprobante'), findsNothing);
+      // Faltan la boleta y la fecha, que ahora escribe el padre.
+      expect(sendAction(tester), isNull);
+    });
+
+    testWidgets('una foto legible después de una ilegible quita el aviso', (
+      tester,
+    ) async {
+      processor = _FakeProcessor(ocrText: 'borroso');
+      await pump(tester);
+      await setPhoto(tester);
+      expect(find.text('No pudimos leer el comprobante'), findsOneWidget);
+
+      VoucherProcessor.instance = _FakeProcessor(
+        ocrText: 'Fecha $paidText\nNo. Boleta 889231455',
+      );
+      await setPhoto(tester);
+      expect(find.text('No pudimos leer el comprobante'), findsNothing);
+      expect(find.text('889231455'), findsOneWidget);
+    });
+
+    testWidgets('sin OCR disponible no se exige legibilidad', (tester) async {
+      processor = _FakeProcessor(); // ocrText null
+      await pump(tester);
+      await setPhoto(tester);
+      expect(find.text('No pudimos leer el comprobante'), findsNothing);
     });
   });
 }

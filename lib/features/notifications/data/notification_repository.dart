@@ -1,3 +1,5 @@
+import '../../../core/paging/page_of.dart';
+
 import 'dart:convert';
 
 import '../../../core/network/api_client.dart';
@@ -96,6 +98,9 @@ class NotificationException implements Exception {
 /// Notificaciones in-app (docs/API_PAGOS.md §3.7): cada usuario ve solo
 /// las suyas.
 abstract class NotificationRepository {
+  /// Tamaño de página del contrato para notificaciones.
+  static const pageSize = 30;
+
   static NotificationRepository instance = MockNotificationRepository();
 
   Future<NotificationPage> myNotifications({
@@ -105,6 +110,13 @@ abstract class NotificationRepository {
 
   /// Marca las indicadas, o todas con [all]. Devuelve las no leídas.
   Future<int> markAsRead({List<String>? ids, bool all = false});
+
+  /// Asocia este teléfono (token de FCM) al usuario con sesión para que la
+  /// API le mande los push. [platform] es "android" o "ios".
+  Future<void> registerDevice(String token, String platform);
+
+  /// Deja de mandar push a este teléfono (al cerrar sesión).
+  Future<void> unregisterDevice(String token);
 }
 
 class ApiNotificationRepository implements NotificationRepository {
@@ -122,7 +134,7 @@ class ApiNotificationRepository implements NotificationRepository {
       path: '$_base/GetMyNotifications',
       queryParameters: {
         'page': '$page',
-        'pageSize': '30',
+        'pageSize': '${NotificationRepository.pageSize}',
         'unreadOnly': '$unreadOnly',
       },
     );
@@ -148,6 +160,18 @@ class ApiNotificationRepository implements NotificationRepository {
     );
     return (json['unreadCount'] as num?)?.toInt() ?? 0;
   }
+
+  @override
+  Future<void> registerDevice(String token, String platform) => _call(
+    () => _api.post('$_base/RegisterDevice', {
+      'token': token,
+      'platform': platform,
+    }),
+  );
+
+  @override
+  Future<void> unregisterDevice(String token) =>
+      _call(() => _api.post('$_base/UnregisterDevice', {'token': token}));
 
   Future<Map<String, dynamic>> _call(
     Future<Map<String, dynamic>> Function() request,
@@ -212,12 +236,14 @@ class MockNotificationRepository implements NotificationRepository {
     bool unreadOnly = false,
   }) async {
     await _wait();
+    final all = [
+      for (final n in _items)
+        if (!unreadOnly || n.unread) n,
+    ];
     return NotificationPage(
-      items: [
-        for (final n in _items)
-          if (!unreadOnly || n.unread) n,
-      ],
+      items: pageOf(all, page, NotificationRepository.pageSize),
       unreadCount: _unread,
+      hasNext: page * NotificationRepository.pageSize < all.length,
     );
   }
 
@@ -231,5 +257,20 @@ class MockNotificationRepository implements NotificationRepository {
       }
     }
     return _unread;
+  }
+
+  /// Teléfonos registrados (para las pruebas).
+  final devices = <String, String>{};
+
+  @override
+  Future<void> registerDevice(String token, String platform) async {
+    await _wait();
+    devices[token] = platform;
+  }
+
+  @override
+  Future<void> unregisterDevice(String token) async {
+    await _wait();
+    devices.remove(token);
   }
 }

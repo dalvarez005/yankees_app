@@ -6,140 +6,193 @@ import '../../../app/app_colors.dart';
 import '../data/payment_models.dart';
 import '../data/payments_repository.dart';
 
-/// Imagen del comprobante: archivo local (modo simulado) o descargada de la
-/// API con el token de la sesión. "Ver completo" la abre con zoom.
-class VoucherImage extends StatefulWidget {
-  const VoucherImage({super.key, required this.voucher, this.height = 220});
-
-  final Voucher voucher;
-  final double height;
-
-  @override
-  State<VoucherImage> createState() => _VoucherImageState();
-}
-
-class _VoucherImageState extends State<VoucherImage> {
-  late final Future<Map<String, String>> _headers = PaymentsRepository.instance
-      .fileHeaders();
-
-  Widget _image(BoxFit fit, Map<String, String> headers) {
-    final v = widget.voucher;
-    if (v.localPath != null) {
-      return Image.file(File(v.localPath!), fit: fit, errorBuilder: _broken);
-    }
-    if (v.fileUrl != null) {
-      return Image.network(
-        PaymentsRepository.instance.fileUrl(v.fileUrl!),
-        headers: headers,
-        fit: fit,
-        errorBuilder: _broken,
-        loadingBuilder: (_, child, progress) => progress == null
-            ? child
-            : const Center(
-                child: CircularProgressIndicator(color: AppColors.navy),
-              ),
-      );
-    }
-    return _broken(context, null, null);
-  }
-
-  Widget _broken(BuildContext context, Object? error, StackTrace? stack) =>
-      const ColoredBox(
-        color: AppColors.background,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.image_not_supported_outlined,
-                color: AppColors.textMuted,
-              ),
-              SizedBox(height: 6),
-              Text(
-                'No se pudo cargar el comprobante',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-              ),
-            ],
-          ),
+/// Abre una imagen a pantalla completa, entera (sin recortar) y con zoom.
+/// [localPath] para un archivo del teléfono; [url] + [headers] para una de
+/// la API (protegida con el token).
+Future<void> showImageViewer(
+  BuildContext context, {
+  String title = 'Comprobante',
+  String? localPath,
+  String? url,
+  Map<String, String> headers = const {},
+}) {
+  Widget broken(BuildContext _, Object? _, StackTrace? _) => const Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.image_not_supported_outlined, color: Colors.white70),
+        SizedBox(height: 8),
+        Text(
+          'No se pudo cargar la imagen',
+          style: TextStyle(color: Colors.white70),
         ),
-      );
+      ],
+    ),
+  );
 
-  void _openFull(Map<String, String> headers) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => Scaffold(
+  final Widget image = localPath != null
+      ? Image.file(File(localPath), fit: BoxFit.contain, errorBuilder: broken)
+      : url != null
+      ? Image.network(
+          url,
+          headers: headers,
+          fit: BoxFit.contain,
+          errorBuilder: broken,
+          loadingBuilder: (_, child, progress) => progress == null
+              ? child
+              : const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+        )
+      : broken(context, null, null);
+
+  return Navigator.of(context).push(
+    MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
           backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-            title: const Text('Comprobante'),
-          ),
-          body: InteractiveViewer(
-            maxScale: 5,
-            child: Center(child: _image(BoxFit.contain, headers)),
+          foregroundColor: Colors.white,
+          title: Text(title),
+        ),
+        body: SafeArea(
+          child: InteractiveViewer(
+            maxScale: 6,
+            child: SizedBox.expand(child: image),
           ),
         ),
       ),
+    ),
+  );
+}
+
+/// Fila "Ver imagen" de un comprobante ya enviado. No muestra la foto en
+/// línea (un comprobante vertical siempre quedaba recortado): la abre
+/// completa al tocarla.
+class VoucherImage extends StatelessWidget {
+  const VoucherImage({super.key, required this.voucher});
+
+  final Voucher voucher;
+
+  Future<void> _open(BuildContext context) async {
+    final v = voucher;
+    final repo = PaymentsRepository.instance;
+    final headers = v.fileUrl == null
+        ? const <String, String>{}
+        : await repo.fileHeaders();
+    if (!context.mounted) return;
+    await showImageViewer(
+      context,
+      localPath: v.localPath,
+      url: v.fileUrl == null ? null : repo.fileUrl(v.fileUrl!),
+      headers: headers,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Map<String, String>>(
-      future: _headers,
-      builder: (context, snap) {
-        final headers = snap.data ?? const <String, String>{};
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: SizedBox(
-            height: widget.height,
-            width: double.infinity,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                _image(BoxFit.cover, headers),
-                Positioned(
-                  right: 10,
-                  bottom: 10,
-                  child: Material(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(20),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap: () => _openFull(headers),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.zoom_out_map_rounded,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              'Ver completo',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
+    final available = voucher.localPath != null || voucher.fileUrl != null;
+    return ImageTile(
+      title: 'Foto del comprobante',
+      subtitle: available
+          ? 'Toca para verla completa'
+          : 'La imagen no está disponible',
+      onView: available ? () => _open(context) : null,
+    );
+  }
+}
+
+/// Tarjeta compacta que representa una imagen sin mostrarla.
+class ImageTile extends StatelessWidget {
+  const ImageTile({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.onView,
+    this.onChange,
+    this.viewLabel = 'Ver imagen',
+  });
+
+  final String title;
+  final String subtitle;
+  final VoidCallback? onView;
+
+  /// Si se indica, muestra "Cambiar" (formulario de subida).
+  final VoidCallback? onChange;
+  final String viewLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onView,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.navy.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.image_outlined, color: AppColors.navy),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              if (onChange != null)
+                TextButton(
+                  onPressed: onChange,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textMuted,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text('Cambiar'),
+                ),
+              TextButton.icon(
+                onPressed: onView,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.visibility_outlined, size: 18),
+                label: Text(viewLabel),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

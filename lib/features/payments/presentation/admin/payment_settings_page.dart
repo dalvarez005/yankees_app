@@ -13,6 +13,8 @@ import '../../../../core/widgets/money_field.dart';
 import '../../data/payment_models.dart';
 import '../../data/payments_repository.dart';
 import '../../data/settings_repository.dart';
+import '../../../../core/widgets/form_ready.dart';
+import '../../../../core/widgets/whatsapp_logo.dart';
 
 /// Configuración de pagos (requiere `configuracion.gestionar`): cuotas
 /// sugeridas al validar usuarios, día límite de pago y el WhatsApp al que
@@ -26,7 +28,8 @@ class PaymentSettingsPage extends StatefulWidget {
   State<PaymentSettingsPage> createState() => _PaymentSettingsPageState();
 }
 
-class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
+class _PaymentSettingsPageState extends State<PaymentSettingsPage>
+    with FormReady {
   final _formKey = GlobalKey<FormState>();
   final _country = TextEditingController(text: '502');
   final _number = TextEditingController();
@@ -38,9 +41,25 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
   bool _saving = false;
   String? _error;
 
+  String? _numberError(String? v) {
+    final n = v ?? '';
+    if (n.isEmpty) return null; // Sin contacto.
+    if (n.length < 8) return 'Mínimo 8 dígitos';
+    if (_full.length > 15) return 'Máximo 15 en total';
+    return null;
+  }
+
+  bool get _ready =>
+      moneyError(_enrollment.text, allowZero: true) == null &&
+      moneyError(_monthly.text, allowZero: true) == null &&
+      _numberError(_number.text) == null &&
+      !(_number.text.trim().isNotEmpty && _country.text.trim().isEmpty) &&
+      _name.text.length <= 60;
+
   @override
   void initState() {
     super.initState();
+    watchFields([_country, _number, _name, _enrollment, _monthly]);
     _load();
   }
 
@@ -141,6 +160,7 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
           ? ErrorState(message: _error!, onRetry: _load)
           : Form(
               key: _formKey,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
                 children: [
@@ -197,7 +217,7 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.chat_rounded, color: Color(0xFF128C7E)),
+                        WhatsAppLogo(size: 24),
                         SizedBox(width: 12),
                         Expanded(
                           child: Text(
@@ -244,13 +264,7 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
                             FilteringTextInputFormatter.digitsOnly,
                             LengthLimitingTextInputFormatter(12),
                           ],
-                          validator: (v) {
-                            final n = v ?? '';
-                            if (n.isEmpty) return null; // Sin contacto.
-                            if (n.length < 8) return 'Mínimo 8 dígitos';
-                            if (_full.length > 15) return 'Máximo 15 en total';
-                            return null;
-                          },
+                          validator: _numberError,
                         ),
                       ),
                     ],
@@ -269,11 +283,14 @@ class _PaymentSettingsPageState extends State<PaymentSettingsPage> {
                   LoadingButton(
                     label: 'Guardar',
                     loading: _saving,
-                    onPressed: _save,
+                    onPressed: _ready ? _save : null,
                   ),
                   const SizedBox(height: 10),
                   TextButton.icon(
-                    onPressed: _test,
+                    // Sin número no hay chat que probar.
+                    onPressed: _ready && _number.text.trim().isNotEmpty
+                        ? _test
+                        : null,
                     icon: const Icon(Icons.open_in_new_rounded),
                     label: const Text('Probar el chat'),
                   ),

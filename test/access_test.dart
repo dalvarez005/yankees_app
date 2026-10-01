@@ -121,10 +121,39 @@ void main() {
         expect(find.text(s), findsWidgets, reason: s);
       }
       expect(find.text('Super admin'), findsOneWidget);
-      // Estadísticas de lo pendiente.
-      expect(find.text('Por validar'), findsOneWidget);
-      expect(find.text('Usuarios pendientes'), findsOneWidget);
+      // El resumen solo trae lo que espera una acción.
+      expect(find.text('Pagos por validar'), findsOneWidget);
+      expect(find.text('Insolventes'), findsWidgets);
+      for (final gone in ['Cuentas', 'Roles', 'Mis hijos']) {
+        expect(find.text(gone), findsNothing, reason: gone);
+      }
       expect(find.text('Asignar cobro'), findsNothing);
+    });
+
+    testWidgets('los indicadores del resumen miden lo mismo', (tester) async {
+      await pump(tester, {...Permissions.admin, Permissions.ownDependents});
+      // Dos etiquetas ocupan dos líneas y "Insolventes" una.
+      Size tile(String label) => tester.getSize(
+        find
+            .ancestor(of: find.text(label), matching: find.byType(InkWell))
+            .first,
+      );
+      final sizes = [
+        tile('Pagos por validar'),
+        tile('Usuarios por validar'),
+        // "Insolventes" también es el título de un acceso: el primero es
+        // el indicador del resumen.
+        tester.getSize(
+          find
+              .ancestor(
+                of: find.text('Insolventes').first,
+                matching: find.byType(InkWell),
+              )
+              .first,
+        ),
+      ];
+      expect(sizes.map((s) => s.height).toSet(), hasLength(1));
+      expect(sizes.map((s) => s.width).toSet(), hasLength(1));
     });
 
     testWidgets('roles y permisos: solo el super admin', (tester) async {

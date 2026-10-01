@@ -164,7 +164,13 @@ abstract class AdminRepository {
 
   /// Hijos inscritos con su categoría y su padre (`jugadores.ver`),
   /// filtrados en la API por categoría y nombre o CUI.
-  Future<List<Player>> players({int? categoryId, String? search});
+  /// Con [page] trae solo esa página; sin él, todas.
+  Future<List<Player>> players({
+    int? categoryId,
+    String? search,
+    int? page,
+    int pageSize = 100,
+  });
 }
 
 class ApiAdminRepository implements AdminRepository {
@@ -271,18 +277,22 @@ class ApiAdminRepository implements AdminRepository {
   }
 
   @override
-  Future<List<Player>> players({int? categoryId, String? search}) async {
+  Future<List<Player>> players({
+    int? categoryId,
+    String? search,
+    int? page,
+    int pageSize = 100,
+  }) async {
     final all = <Player>[];
     final q = search?.trim() ?? '';
-    // Se recorren las páginas; el club no tendrá miles de jugadores.
-    for (var page = 1; page <= 20; page++) {
+    for (var p = page ?? 1; p <= (page ?? 20); p++) {
       final path = Uri(
         path: '/api/Dependent/GetDependentDataByCategory',
         queryParameters: {
           'categoryId': ?categoryId?.toString(),
           if (q.isNotEmpty) 'search': q,
-          'page': '$page',
-          'pageSize': '100',
+          'page': '$p',
+          'pageSize': '$pageSize',
         },
       );
       final json = await _call(() => _api.get(path.toString()));
@@ -351,6 +361,10 @@ class UnavailableAdminRepository implements AdminRepository {
   Future<ManagedUser> setUserActive(String userId, bool active) async =>
       _fail();
   @override
-  Future<List<Player>> players({int? categoryId, String? search}) async =>
-      _fail();
+  Future<List<Player>> players({
+    int? categoryId,
+    String? search,
+    int? page,
+    int pageSize = 100,
+  }) async => _fail();
 }

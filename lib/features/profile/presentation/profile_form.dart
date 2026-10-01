@@ -8,6 +8,7 @@ import '../../auth/presentation/widgets/auth_field.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
 import '../data/profile_review_store.dart';
 import '../../../core/widgets/feedback.dart';
+import '../../../core/widgets/form_ready.dart';
 
 /// Correo (solo lectura) + nombres y apellidos editables. Los valores de
 /// relleno que pone la API para cuentas de Google (p. ej. apellido
@@ -30,7 +31,7 @@ class ProfileForm extends StatefulWidget {
   State<ProfileForm> createState() => _ProfileFormState();
 }
 
-class _ProfileFormState extends State<ProfileForm> {
+class _ProfileFormState extends State<ProfileForm> with FormReady {
   final _formKey = GlobalKey<FormState>();
   late final _firstName = _controller(widget.user.firstName);
   late final _secondName = _controller(widget.user.secondName);
@@ -41,6 +42,19 @@ class _ProfileFormState extends State<ProfileForm> {
   TextEditingController _controller(String? value) => TextEditingController(
     text: ProfileReviewStore.isPlaceholder(value, widget.user) ? '' : value,
   );
+
+  bool get _ready =>
+      Validators.name(_firstName.text, 'El nombre') == null &&
+      Validators.optionalName(_secondName.text, 'El segundo nombre') == null &&
+      Validators.name(_firstLastName.text, 'El apellido') == null &&
+      Validators.optionalName(_secondLastName.text, 'El segundo apellido') ==
+          null;
+
+  @override
+  void initState() {
+    super.initState();
+    watchFields([_firstName, _secondName, _firstLastName, _secondLastName]);
+  }
 
   @override
   void dispose() {
@@ -79,6 +93,7 @@ class _ProfileFormState extends State<ProfileForm> {
     const gap = SizedBox(height: 16);
     return Form(
       key: _formKey,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -128,7 +143,7 @@ class _ProfileFormState extends State<ProfileForm> {
           LoadingButton(
             label: widget.submitLabel,
             loading: _saving,
-            onPressed: _submit,
+            onPressed: _ready ? _submit : null,
           ),
         ],
       ),

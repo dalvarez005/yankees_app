@@ -5,6 +5,8 @@ import 'app/env.dart';
 import 'app/home.dart';
 import 'app/routes.dart';
 import 'core/network/api_client.dart';
+import 'core/notifications/local_notifier.dart';
+import 'core/notifications/push_messaging.dart';
 import 'core/widgets/feedback.dart';
 import 'core/session/session_manager.dart';
 import 'core/session/session_store.dart';
@@ -29,6 +31,10 @@ final _navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  LocalNotifier.instance = DeviceLocalNotifier();
+  // Sin configuración de Firebase en la plataforma queda sin push.
+  final push = await FirebasePushMessaging.create();
+  if (push != null) PushMessaging.instance = push;
 
   if (!Env.useMock) {
     final api = ApiClient(baseUrl: Env.apiBaseUrl);

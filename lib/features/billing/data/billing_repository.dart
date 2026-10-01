@@ -1,3 +1,4 @@
+import '../../../core/paging/page_of.dart';
 import '../../../core/network/api_client.dart';
 import 'billing_models.dart';
 
@@ -15,7 +16,11 @@ abstract class BillingRepository {
   static BillingRepository instance = MockBillingRepository();
 
   /// Los más antiguos primero.
-  Future<List<PendingUser>> pendingUsers({String? search});
+  Future<List<PendingUser>> pendingUsers({
+    String? search,
+    int page = 1,
+    int pageSize = 100,
+  });
 
   /// Pasa el perfil a validado y crea el cobro de inscripción.
   Future<Billing> validateUser(
@@ -40,11 +45,15 @@ class ApiBillingRepository implements BillingRepository {
   static const _base = '/api/Billing';
 
   @override
-  Future<List<PendingUser>> pendingUsers({String? search}) async {
+  Future<List<PendingUser>> pendingUsers({
+    String? search,
+    int page = 1,
+    int pageSize = 100,
+  }) async {
     final q = search?.trim() ?? '';
     final path = Uri(
       path: '$_base/GetPendingUsers',
-      queryParameters: {'page': '1', 'pageSize': '100', 'search': q},
+      queryParameters: {'page': '$page', 'pageSize': '$pageSize', 'search': q},
     );
     final json = await _call(() => _api.get(path.toString()));
     return [
@@ -137,16 +146,21 @@ class MockBillingRepository implements BillingRepository {
   }
 
   @override
-  Future<List<PendingUser>> pendingUsers({String? search}) async {
+  Future<List<PendingUser>> pendingUsers({
+    String? search,
+    int page = 1,
+    int pageSize = 100,
+  }) async {
     await _wait();
     final q = search?.trim().toLowerCase() ?? '';
-    return [
+    final all = [
       for (final u in _pending)
         if (q.isEmpty ||
             u.name.toLowerCase().contains(q) ||
             u.email.toLowerCase().contains(q))
           u,
     ];
+    return pageOf(all, page, pageSize);
   }
 
   @override
