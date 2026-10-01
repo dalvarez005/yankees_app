@@ -4,6 +4,7 @@ import '../../../app/routes.dart';
 import '../data/app_user.dart';
 import '../data/auth_repository.dart';
 import '../../profile/presentation/enter_app.dart';
+import 'reset_password_page.dart';
 import 'validators.dart';
 import 'widgets/auth_field.dart';
 import 'widgets/auth_header.dart';
@@ -82,15 +83,16 @@ class _LoginPageState extends State<LoginPage> with FormReady {
   }
 
   Future<void> _forgotPassword() async {
-    if (Validators.email(_email.text) != null) {
-      _showMessage(
-        'Escribe tu correo arriba para recuperar tu contraseña',
-        info: true,
-      );
-      return;
+    FocusScope.of(context).unfocus();
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ResetPasswordPage(initialEmail: _email.text.trim()),
+      ),
+    );
+    if (changed ?? false) {
+      _password.clear();
+      _showMessage('Contraseña actualizada. Ingresa con la nueva.');
     }
-    await AuthRepository.instance.sendPasswordReset(_email.text);
-    _showMessage('Te enviamos un enlace a ${_email.text.trim()}');
   }
 
   void _showMessage(String message, {bool error = false, bool info = false}) {

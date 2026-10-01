@@ -31,7 +31,16 @@ abstract class AuthRepository {
   /// usuario cancela el selector de cuentas.
   Future<AppUser?> signInWithGoogle();
 
+  /// Pide el código de recuperación. La API responde igual exista o no la
+  /// cuenta, así que esto no confirma que el correo esté registrado.
   Future<void> sendPasswordReset(String email);
+
+  /// Define la contraseña nueva con el código de 6 dígitos del correo.
+  Future<void> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  });
 
   /// Al abrir la app: devuelve el usuario si hay una sesión guardada válida.
   Future<AppUser?> restoreSession();
@@ -169,6 +178,22 @@ class MockAuthRepository implements AuthRepository {
 
   @override
   Future<void> sendPasswordReset(String email) => _latency();
+
+  /// En el mock el código siempre es 123456.
+  @override
+  Future<void> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    await _latency();
+    final key = email.trim().toLowerCase();
+    final entry = _users[key];
+    if (entry == null || code != '123456') {
+      throw const AuthException('El código no es válido o ya venció');
+    }
+    _users[key] = (user: entry.user, password: newPassword);
+  }
 
   @override
   Future<AppUser?> restoreSession() async => null;

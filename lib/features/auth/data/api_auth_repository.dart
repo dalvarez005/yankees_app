@@ -237,8 +237,40 @@ class ApiAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> sendPasswordReset(String email) =>
-      _pending.sendPasswordReset(email);
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await _api.post('/api/Auth/forgot-password', {
+        'email': email.trim().toLowerCase(),
+      }, authenticated: false);
+    } on ApiException catch (e) {
+      throw AuthException(
+        e.statusCode == 429
+            ? 'Demasiados intentos. Espera un minuto y vuelve a probar.'
+            : 'No se pudo enviar el código. Intenta de nuevo.',
+      );
+    }
+  }
+
+  @override
+  Future<void> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    try {
+      await _api.post('/api/Auth/reset-password', {
+        'email': email.trim().toLowerCase(),
+        'code': code.trim(),
+        'newPassword': newPassword,
+      }, authenticated: false);
+    } on ApiException catch (e) {
+      throw AuthException(switch (e.statusCode) {
+        400 => 'El código no es válido o ya venció',
+        429 => 'Demasiados intentos. Espera un minuto y vuelve a probar.',
+        _ => 'No se pudo cambiar la contraseña. Intenta de nuevo.',
+      });
+    }
+  }
 
   @override
   Future<AppUser?> restoreSession() => _session.restore();
