@@ -51,16 +51,17 @@ class PushRegistration {
     return true;
   }
 
-  /// Antes de cerrar la sesión (todavía con token de acceso): este teléfono
-  /// deja de recibir los avisos de la cuenta.
-  Future<void> unregister() async {
+  /// Al cerrar la sesión: este teléfono deja de recibir los avisos de la
+  /// cuenta. [accessToken] es el de la sesión que se cierra, para poder
+  /// avisar a la API aunque la sesión local ya se haya borrado.
+  Future<void> unregister({String? accessToken}) async {
     await _refresh?.cancel();
     _refresh = null;
     final token = _token;
     _token = null;
     if (token == null) return;
     try {
-      await _repository.unregisterDevice(token);
+      await _repository.unregisterDevice(token, accessToken: accessToken);
     } on NotificationException {
       // Sin conexión: la API lo reasigna cuando otra cuenta entre aquí.
     }

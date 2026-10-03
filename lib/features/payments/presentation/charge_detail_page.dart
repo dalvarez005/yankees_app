@@ -10,7 +10,6 @@ import '../../../core/format/formats.dart';
 import '../../../core/widgets/app_ui.dart';
 import '../../../core/widgets/feedback.dart';
 import '../../../core/widgets/whatsapp_logo.dart';
-import '../../../core/widgets/money_field.dart';
 import '../../auth/presentation/widgets/auth_field.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
 import '../data/payment_models.dart';
@@ -544,9 +543,6 @@ class UploadVoucherPage extends StatefulWidget {
 
 class _UploadVoucherPageState extends State<UploadVoucherPage> {
   final _formKey = GlobalKey<FormState>();
-  late final _amount = TextEditingController(
-    text: moneyText(widget.charge.amount),
-  );
   final _reference = TextEditingController();
   final _description = TextEditingController();
   DateTime? _paymentDate;
@@ -560,34 +556,20 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
   bool _analyzing = false;
   bool _photoMissing = false;
 
-  /// Lo que se leyó de la foto (para avisar al padre).
-  bool _referenceSuggested = false;
-  bool _dateFromPhoto = false;
+  /// Montos que se ven en la foto (para avisar si no coinciden).
   List<double> _ocrAmounts = const [];
 
   /// La foto actual no se pudo leer: qué faltó ("la fecha", …).
   List<String> _unreadable = const [];
 
-  /// Fotos seguidas que no se pudieron leer.
-  int _failedReads = 0;
-
-  /// Tras dos intentos se permite llenar los datos a mano.
-  bool _manual = false;
-
   bool get _busy => _stage != null;
 
   /// Hay que repetir la foto antes de poder enviar.
-  bool get _mustRetake => _unreadable.isNotEmpty && !_manual;
+  bool get _mustRetake => _unreadable.isNotEmpty;
 
-  static String? _referenceError(String? v) {
-    final t = v?.trim() ?? '';
-    if (t.isEmpty) return 'Escribe el número de boleta';
-    if (t.length < 4) return 'Mínimo 4 caracteres';
-    if (!RegExp(r'^[A-Za-z0-9-]+$').hasMatch(t)) {
-      return 'Solo letras, números y guiones';
-    }
-    return null;
-  }
+  /// La boleta leída de la foto tiene un formato aceptable.
+  static bool _validReference(String v) =>
+      v.trim().length >= 4 && RegExp(r'^[A-Za-z0-9-]+$').hasMatch(v.trim());
 
   static String? _descriptionError(String? v) {
     final t = v?.trim() ?? '';
@@ -597,17 +579,15 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
   }
 
   /// Todo lo obligatorio está completo y la foto se pudo leer.
-  bool get _ready {
-    final amount = parseMoney(_amount.text);
-    return _file != null &&
-        !_analyzing &&
-        !_mustRetake &&
-        amount != null &&
-        (amount - widget.charge.amount).abs() <= 0.001 &&
-        _referenceError(_reference.text) == null &&
-        _descriptionError(_description.text) == null &&
-        _paymentDate != null;
-  }
+  /// El monto es el del cobro; boleta y fecha salen de la foto: el padre
+  /// solo elige la foto y escribe la descripción.
+  bool get _ready =>
+      _file != null &&
+      !_analyzing &&
+      !_mustRetake &&
+      _validReference(_reference.text) &&
+      _descriptionError(_description.text) == null &&
+      _paymentDate != null;
 
   void _onFieldChanged() {
     if (mounted) setState(() {});
@@ -616,14 +596,13 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
   @override
   void initState() {
     super.initState();
-    for (final c in [_amount, _reference, _description]) {
+    for (final c in [_reference, _description]) {
       c.addListener(_onFieldChanged);
     }
   }
 
   @override
   void dispose() {
-    _amount.dispose();
     _reference.dispose();
     _description.dispose();
     super.dispose();
@@ -682,14 +661,8 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
       _ocrAmounts = const [];
       _unreadable = const [];
       // Lo leído de la foto anterior ya no vale.
-      if (_referenceSuggested) {
-        _reference.clear();
-        _referenceSuggested = false;
-      }
-      if (_dateFromPhoto) {
-        _paymentDate = null;
-        _dateFromPhoto = false;
-      }
+      _reference.clear();
+      _paymentDate = null;
     });
     unawaited(_applySuggestions(analysis));
   }
@@ -714,40 +687,10 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
       _analyzing = false;
       _ocrAmounts = s.amounts;
       // La boleta y la fecha salen siempre del comprobante.
-      if (s.reference != null) {
-        _reference.text = s.reference!;
-        _referenceSuggested = true;
-      }
-      if (s.date != null) {
-        _paymentDate = s.date;
-        _dateFromPhoto = true;
-      }
-      if (s.readable) {
-        _unreadable = const [];
-        _failedReads = 0;
-      } else {
-        _unreadable = s.missing;
-        _failedReads++;
-      }
+      if (s.reference != null) _reference.text = s.reference!;
+      if (s.date != null) _paymentDate = s.date;
+      _unreadable = s.readable ? const [] : s.missing;
     });
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _paymentDate ?? today,
-      firstDate: DateTime(now.year - 1, now.month, now.day),
-      lastDate: today,
-      helpText: 'Fecha del depósito o transferencia',
-    );
-    if (picked != null && mounted) {
-      setState(() {
-        _paymentDate = picked;
-        _dateFromPhoto = false;
-      });
-    }
   }
 
   Future<void> _send() async {
@@ -781,7 +724,7 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
       final updated = await PaymentsRepository.instance.uploadVoucher(
         widget.charge.id,
         VoucherForm(
-          amount: parseMoney(_amount.text)!,
+          amount: widget.charge.amount,
           bankReference: _reference.text.trim(),
           description: _description.text.trim(),
           paymentDate: _paymentDate!,
@@ -868,9 +811,7 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
                 const SizedBox(height: 10),
                 _RetakePanel(
                   missing: _unreadable,
-                  allowManual: _failedReads >= 2,
                   onRetake: _busy ? null : _pick,
-                  onManual: () => setState(() => _manual = true),
                 ),
               ],
               if (ocrMismatch) ...[
@@ -884,36 +825,33 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
                 ),
               ],
               const SizedBox(height: 20),
-              MoneyField(
+              _ReadOnlyField(
                 label: 'Monto pagado',
-                controller: _amount,
-                enabled: !_busy,
-                extraValidator: (a) => (a - c.amount).abs() > 0.001
-                    ? 'Debe ser igual al cobro (${formatMoney(c.amount)})'
-                    : null,
+                icon: Icons.payments_outlined,
+                value: formatMoney(c.amount),
               ),
               const SizedBox(height: 16),
-              AuthField(
+              _ReadOnlyField(
                 label: 'Número de boleta o transferencia',
-                hint: 'Ej. 889231',
                 icon: Icons.tag_rounded,
-                controller: _reference,
-                enabled: !_busy,
-                textCapitalization: TextCapitalization.characters,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9-]')),
-                  LengthLimitingTextInputFormatter(60),
-                ],
-                validator: _referenceError,
+                value: _reference.text.trim().isEmpty
+                    ? null
+                    : _reference.text.trim(),
               ),
-              if (_referenceSuggested)
-                const Padding(
-                  padding: EdgeInsets.only(top: 6, left: 4),
-                  child: Text(
-                    'Lo leímos de la foto: verifica que sea correcto.',
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-                  ),
+              const SizedBox(height: 16),
+              _ReadOnlyField(
+                label: 'Fecha de pago',
+                icon: Icons.event_rounded,
+                value: _paymentDate == null ? null : formatDate(_paymentDate!),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(top: 8, left: 4),
+                child: Text(
+                  'El monto es el del cobro; la boleta y la fecha se leen de '
+                  'la foto del comprobante.',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                 ),
+              ),
               const SizedBox(height: 16),
               AuthField(
                 label: 'Descripción',
@@ -925,16 +863,6 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
                 inputFormatters: [LengthLimitingTextInputFormatter(250)],
                 validator: _descriptionError,
               ),
-              const SizedBox(height: 16),
-              _DateField(value: _paymentDate, onTap: _busy ? null : _pickDate),
-              if (_dateFromPhoto)
-                const Padding(
-                  padding: EdgeInsets.only(top: 6, left: 4),
-                  child: Text(
-                    'La leímos de la foto: verifica que sea correcta.',
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-                  ),
-                ),
               const SizedBox(height: 24),
               if (_busy)
                 _ProgressSteps(stage: _stage!)
@@ -961,20 +889,12 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
   }
 }
 
-/// La foto no se pudo leer: pedir otra y, tras dos intentos, dejar llenar
-/// los datos a mano.
+/// La foto no se pudo leer: hay que tomar otra.
 class _RetakePanel extends StatelessWidget {
-  const _RetakePanel({
-    required this.missing,
-    required this.allowManual,
-    required this.onRetake,
-    required this.onManual,
-  });
+  const _RetakePanel({required this.missing, required this.onRetake});
 
   final List<String> missing;
-  final bool allowManual;
   final VoidCallback? onRetake;
-  final VoidCallback onManual;
 
   @override
   Widget build(BuildContext context) {
@@ -1016,11 +936,6 @@ class _RetakePanel extends StatelessWidget {
             icon: const Icon(Icons.photo_camera_outlined),
             label: const Text('Repetir la foto'),
           ),
-          if (allowManual)
-            TextButton(
-              onPressed: onManual,
-              child: const Text('No se lee mejor: llenar los datos a mano'),
-            ),
         ],
       ),
     );
@@ -1127,50 +1042,46 @@ class _PhotoBox extends StatelessWidget {
 }
 
 /// Fecha de pago: obligatoria y no futura (el selector no deja elegirla).
-class _DateField extends StatelessWidget {
-  const _DateField({required this.value, required this.onTap});
+/// Dato que el padre no escribe: lo pone la app (monto del cobro) o se
+/// lee de la foto (boleta y fecha).
+class _ReadOnlyField extends StatelessWidget {
+  const _ReadOnlyField({
+    required this.label,
+    required this.icon,
+    required this.value,
+  });
 
-  final DateTime? value;
-  final VoidCallback? onTap;
+  final String label;
+  final IconData icon;
+
+  /// null: todavía no se leyó de la foto.
+  final String? value;
 
   @override
   Widget build(BuildContext context) {
-    return FormField<DateTime>(
-      validator: (_) => value == null ? 'Elige la fecha de pago' : null,
-      builder: (state) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Fecha de pago',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+    final v = value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        ),
+        const SizedBox(height: 8),
+        InputDecorator(
+          decoration: InputDecoration(
+            enabled: false,
+            prefixIcon: Icon(icon, size: 20),
           ),
-          const SizedBox(height: 8),
-          InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: onTap == null
-                ? null
-                : () {
-                    onTap!();
-                    state.didChange(value);
-                  },
-            child: InputDecorator(
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.event_rounded, size: 20),
-                suffixIcon: const Icon(Icons.expand_more_rounded),
-                errorText: state.hasError && value == null
-                    ? state.errorText
-                    : null,
-              ),
-              child: Text(
-                value == null ? 'Selecciona la fecha' : formatDate(value!),
-                style: TextStyle(
-                  color: value == null ? AppColors.textMuted : AppColors.text,
-                ),
-              ),
+          child: Text(
+            v ?? 'Se lee de la foto',
+            style: TextStyle(
+              color: v == null ? AppColors.textMuted : AppColors.text,
+              fontWeight: v == null ? null : FontWeight.w600,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

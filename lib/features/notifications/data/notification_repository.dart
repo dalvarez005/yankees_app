@@ -116,7 +116,8 @@ abstract class NotificationRepository {
   Future<void> registerDevice(String token, String platform);
 
   /// Deja de mandar push a este teléfono (al cerrar sesión).
-  Future<void> unregisterDevice(String token);
+  /// [accessToken]: el de la sesión que se está cerrando.
+  Future<void> unregisterDevice(String token, {String? accessToken});
 }
 
 class ApiNotificationRepository implements NotificationRepository {
@@ -170,8 +171,11 @@ class ApiNotificationRepository implements NotificationRepository {
   );
 
   @override
-  Future<void> unregisterDevice(String token) =>
-      _call(() => _api.post('$_base/UnregisterDevice', {'token': token}));
+  Future<void> unregisterDevice(String token, {String? accessToken}) => _call(
+    () => _api.post('$_base/UnregisterDevice', {
+      'token': token,
+    }, bearer: accessToken),
+  );
 
   Future<Map<String, dynamic>> _call(
     Future<Map<String, dynamic>> Function() request,
@@ -269,7 +273,7 @@ class MockNotificationRepository implements NotificationRepository {
   }
 
   @override
-  Future<void> unregisterDevice(String token) async {
+  Future<void> unregisterDevice(String token, {String? accessToken}) async {
     await _wait();
     devices.remove(token);
   }

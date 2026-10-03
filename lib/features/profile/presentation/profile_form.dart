@@ -40,7 +40,7 @@ class _ProfileFormState extends State<ProfileForm> with FormReady {
   bool _saving = false;
 
   TextEditingController _controller(String? value) => TextEditingController(
-    text: ProfileReviewStore.isPlaceholder(value, widget.user) ? '' : value,
+    text: ProfileReview.isPlaceholder(value, widget.user) ? '' : value,
   );
 
   bool get _ready =>

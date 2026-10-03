@@ -16,7 +16,6 @@ import 'package:yankees/features/family/presentation/family_page.dart';
 import 'package:yankees/features/notifications/data/notification_repository.dart';
 import 'package:yankees/features/payments/data/payments_repository.dart';
 import 'package:yankees/features/payments/data/settings_repository.dart';
-import 'package:yankees/features/profile/data/profile_review_store.dart';
 import 'package:yankees/main.dart';
 
 AppUser _parent(BillingStatus? status) => AppUser(
@@ -120,7 +119,6 @@ void main() {
 
     setUp(() {
       GoogleFonts.config.allowRuntimeFetching = false;
-      ProfileReviewStore.instance = MemoryProfileReviewStore();
       auth = _FakeAuth(_parent(BillingStatus.pending));
       AuthRepository.instance = auth;
       SettingsRepository.instance = MockSettingsRepository(

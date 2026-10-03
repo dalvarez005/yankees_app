@@ -158,10 +158,13 @@ class _FamilyPageState extends State<FamilyPage> {
       ),
     );
     if (saved == null || !mounted) return;
+    final category = saved.categoryName;
     _showMessage(
       dependent == null
-          ? '${saved.firstName} fue agregado a tu familia.'
-          : 'Datos de ${saved.firstName} actualizados.',
+          ? '${saved.firstName} fue agregado a tu familia'
+                '${category == null ? '' : ' en la categoría $category'}.'
+          : 'Datos de ${saved.firstName} actualizados'
+                '${category == null ? '' : ' · categoría $category'}.',
     );
     await _load();
   }

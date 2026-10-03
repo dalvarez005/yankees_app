@@ -204,6 +204,14 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
                       value: _birthDate,
                       onTap: _saving ? null : _pickBirthDate,
                     ),
+                    gap,
+                    _CategoryInfo(
+                      current:
+                          _isEdit && _birthDate == widget.dependent!.birthDate
+                          ? widget.dependent!.categoryName ?? 'Sin categoría'
+                          : null,
+                      changed: _isEdit,
+                    ),
                     const SizedBox(height: 28),
                     LoadingButton(
                       label: _isEdit ? 'Guardar cambios' : 'Agregar',
@@ -261,9 +269,55 @@ class _BirthDateField extends StatelessWidget {
             ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// Categoría solo informativa: la asigna la API según la edad.
+class _CategoryInfo extends StatelessWidget {
+  const _CategoryInfo({required this.current, required this.changed});
+
+  /// Categoría actual (al editar sin cambiar la fecha); null si aún no se sabe.
+  final String? current;
+
+  /// Editando con una fecha nueva: se recalcula al guardar.
+  final bool changed;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final name = current;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Categoría',
+          style: text.labelLarge?.copyWith(
+            color: AppColors.text,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        InputDecorator(
+          decoration: const InputDecoration(
+            enabled: false,
+            prefixIcon: Icon(Icons.sports_baseball_outlined, size: 20),
+          ),
+          child: Text(
+            name ??
+                (changed
+                    ? 'Se actualiza al guardar con la nueva fecha'
+                    : 'Se asigna al guardar'),
+            style: text.bodyLarge?.copyWith(
+              color: name == null ? AppColors.textMuted : AppColors.text,
+              fontWeight: name == null ? null : FontWeight.w600,
+            ),
+          ),
+        ),
         const SizedBox(height: 8),
         Text(
-          'La categoría se asigna automáticamente según la edad.',
+          'El club asigna la categoría automáticamente según la edad.',
           style: text.bodySmall?.copyWith(color: AppColors.textMuted),
         ),
       ],

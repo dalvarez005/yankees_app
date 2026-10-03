@@ -515,6 +515,7 @@ void main() {
 
       await r.signOut();
       expect(store.session, isNull);
+      await pumpEventQueue();
       expect(requests.last.url.path, '/api/Session/logout');
       expect(jsonDecode(requests.last.body), {'refreshToken': 'rt-1'});
     });

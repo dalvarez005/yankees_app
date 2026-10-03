@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import '../../../core/network/api_client.dart';
@@ -275,13 +276,24 @@ class ApiAuthRepository implements AuthRepository {
   @override
   Future<AppUser?> restoreSession() => _session.restore();
 
+  /// Solo espera a borrar la sesión del teléfono; lo que depende de la red
+  /// (quitar el teléfono del push, cerrar la sesión en la API y en Google)
+  /// sigue en segundo plano para que "Cerrar sesión" sea inmediato.
   @override
   Future<void> signOut() async {
-    // Antes de cerrar: todavía hace falta el token de acceso.
-    await PushRegistration.instance.unregister();
+    final accessToken = _session.currentAccessToken;
     await _session.end();
-    await _google.signOut();
     await _pending.signOut();
+    unawaited(_signOutRemote(accessToken));
+  }
+
+  Future<void> _signOutRemote(String? accessToken) async {
+    try {
+      await PushRegistration.instance.unregister(accessToken: accessToken);
+    } catch (_) {}
+    try {
+      await _google.signOut();
+    } catch (_) {}
   }
 
   /// La API pide un `username` sin "@" y único. Se usa la parte del correo

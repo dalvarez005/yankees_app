@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../features/auth/data/app_user.dart';
 import '../network/api_client.dart';
 import 'session_store.dart';
@@ -29,6 +31,9 @@ class SessionManager implements Authenticator {
   void Function()? onSessionExpired;
 
   AppUser? get currentUser => _session?.user;
+
+  /// Token de acceso guardado, sin renovarlo.
+  String? get currentAccessToken => _session?.accessToken;
 
   /// Arranca una sesión con la respuesta de login de la API.
   Future<void> start({
@@ -121,17 +126,23 @@ class SessionManager implements Authenticator {
   }
 
   /// Cierra la sesión en la API (si se puede) y borra todo localmente.
+  /// Cierra la sesión en el teléfono al instante; el aviso a la API sigue
+  /// en segundo plano para que la pantalla no espere a la red.
   Future<void> end() async {
     final session = _session;
     await _clear();
     if (session == null) return;
+    unawaited(_logout(session.refreshToken));
+  }
+
+  Future<void> _logout(String refreshToken) async {
     try {
       await _api.post('/api/Session/logout', {
-        'refreshToken': session.refreshToken,
+        'refreshToken': refreshToken,
       }, authenticated: false);
     } on ApiException {
       // Sin conexión igual se cierra localmente; el token vence solo.
-    }
+    } catch (_) {}
   }
 
   Future<void> _clear() async {

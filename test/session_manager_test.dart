@@ -213,6 +213,9 @@ void main() {
     setUpApi();
     await startSession();
     await session.end();
+    // Lo local se borra al instante; el aviso a la API va en segundo plano.
+    expect(store.session, isNull);
+    await pumpEventQueue();
     expect(requests.single.url.path, '/api/Session/logout');
     expect(store.session, isNull);
 
@@ -227,6 +230,7 @@ void main() {
     );
     await offline.restore();
     await offline.end();
+    await pumpEventQueue();
     expect(store.session, isNull);
   });
 }

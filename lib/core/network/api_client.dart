@@ -51,11 +51,21 @@ class ApiClient {
 
   /// [authenticated] en false para endpoints que no deben llevar ni renovar
   /// el token (login, registro, el propio refresh).
+  ///
+  /// [bearer]: usar este token en vez del de la sesión (p. ej. para avisar
+  /// a la API después de haber cerrado la sesión local). No se renueva.
   Future<Map<String, dynamic>> post(
     String path,
     Map<String, dynamic> body, {
     bool authenticated = true,
-  }) => _request('POST', path, body: body, authenticated: authenticated);
+    String? bearer,
+  }) => _request(
+    'POST',
+    path,
+    body: body,
+    authenticated: authenticated,
+    bearer: bearer,
+  );
 
   Future<Map<String, dynamic>> get(String path, {bool authenticated = true}) =>
       _request('GET', path, authenticated: authenticated);
@@ -96,9 +106,10 @@ class ApiClient {
     Map<String, dynamic>? body,
     _Upload? upload,
     required bool authenticated,
+    String? bearer,
   }) async {
-    final auth = authenticated ? authenticator : null;
-    final token = await auth?.accessToken();
+    final auth = authenticated && bearer == null ? authenticator : null;
+    final token = bearer ?? await auth?.accessToken();
     var response = await _send(method, path, body, token, upload);
 
     // Token vencido o revocado: se renueva una vez y se reintenta.

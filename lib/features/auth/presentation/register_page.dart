@@ -61,7 +61,7 @@ class _RegisterPageState extends State<RegisterPage> with FormReady {
         firstLastName: _firstLastName.text,
         password: _password.text,
       );
-      _goHome(user, justRegistered: true);
+      _goHome(user);
     } on AuthException catch (e) {
       _showError(e.message);
     } finally {
@@ -82,9 +82,9 @@ class _RegisterPageState extends State<RegisterPage> with FormReady {
     }
   }
 
-  void _goHome(AppUser user, {bool justRegistered = false}) {
+  void _goHome(AppUser user) {
     if (!mounted) return;
-    enterApp(context, user, justRegistered: justRegistered);
+    enterApp(context, user);
   }
 
   void _showError(String message) {

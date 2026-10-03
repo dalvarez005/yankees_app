@@ -70,8 +70,7 @@ Future<void> main() async {
       // Sin conexión se usan los guardados en la sesión.
     }
   }
-  final review =
-      user != null && await ProfileReviewStore.instance.needsReview(user);
+  final review = user != null && ProfileReview.needed(user);
   runApp(YankeesApp(initialUser: user, reviewProfile: review));
 }
 

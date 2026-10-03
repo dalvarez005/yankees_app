@@ -5,7 +5,6 @@ import '../../../app/app_colors.dart';
 import '../../../app/routes.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/data/auth_repository.dart';
-import '../data/profile_review_store.dart';
 import 'profile_form.dart';
 
 /// Después del primer ingreso en el dispositivo: el usuario confirma o
@@ -45,7 +44,6 @@ class _ConfirmProfilePageState extends State<ConfirmProfilePage> {
   Future<String?> _confirm(ProfileInput input) async {
     try {
       final updated = await AuthRepository.instance.updateProfile(input);
-      await ProfileReviewStore.instance.markReviewed(updated.id);
       if (!mounted) return null;
       Navigator.of(
         context,

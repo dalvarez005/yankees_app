@@ -102,7 +102,8 @@ class _FakeRepo implements NotificationRepository {
   }
 
   @override
-  Future<void> unregisterDevice(String token) async => devices.remove(token);
+  Future<void> unregisterDevice(String token, {String? accessToken}) async =>
+      devices.remove(token);
 }
 
 /// Push controlable desde la prueba.

@@ -116,23 +116,20 @@ void main() {
     expect(find.text('Estás al día'), findsOneWidget);
   });
 
-  testWidgets('el formulario pide la fecha de nacimiento, no la categoría', (
-    tester,
-  ) async {
-    _tall(tester);
-    await tester.pumpWidget(_app());
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Agregar hijo'));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'el formulario pide la fecha y muestra la categoría solo como información',
+    (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(_app());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Agregar hijo'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Fecha de nacimiento'), findsOneWidget);
-    expect(find.text('Selecciona la fecha'), findsOneWidget);
-    expect(find.text('Categoría'), findsNothing);
-    expect(
-      find.text('La categoría se asigna automáticamente según la edad.'),
-      findsOneWidget,
-    );
-  });
+      expect(find.text('Fecha de nacimiento'), findsOneWidget);
+      expect(find.text('Selecciona la fecha'), findsOneWidget);
+      expect(find.text('Se asigna al guardar'), findsOneWidget);
+    },
+  );
 
   testWidgets('el formulario valida CUI, nombre y apellido', (tester) async {
     _tall(tester);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:yankees/core/format/formats.dart';
 import 'package:yankees/app/app_theme.dart';
 import 'package:yankees/features/payments/data/payment_models.dart';
 import 'package:yankees/features/payments/data/payments_repository.dart';
@@ -400,8 +401,9 @@ void main() {
         ocrText: 'Banco Industrial\n$paidText\nReferencia: 55120993\nQ 250.00',
       );
       await pump(tester);
-      // El monto viene prellenado con el del cobro, pero falta lo demás.
-      expect(find.text(charge.amount.toStringAsFixed(0)), findsOneWidget);
+      // El monto es el del cobro; boleta y fecha esperan a la foto.
+      expect(find.text(formatMoney(charge.amount)), findsWidgets);
+      expect(find.text('Se lee de la foto'), findsNWidgets(2));
       expect(sendAction(tester), isNull);
 
       // Con la foto leída sigue faltando la descripción.
@@ -417,22 +419,15 @@ void main() {
       expect(payments.form, isNull);
     });
 
-    testWidgets('el monto debe ser igual al del cobro', (tester) async {
+    testWidgets('monto, boleta y fecha no se pueden editar', (tester) async {
       processor = _FakeProcessor(ocrText: 'Fecha $paidText\nBoleta 55120993');
       await pump(tester);
       await setPhoto(tester);
-      await describe(tester, 'Depósito BI inscripción');
-      expect(sendAction(tester), isNotNull);
 
-      await tester.enterText(find.byType(TextFormField).first, '1');
-      await tester.pumpAndSettle();
-      expect(
-        find.text(
-          'Debe ser igual al cobro (Q ${charge.amount.toStringAsFixed(2)})',
-        ),
-        findsOneWidget,
-      );
-      expect(sendAction(tester), isNull);
+      // El único campo que escribe el padre es la descripción.
+      expect(find.byType(TextFormField), findsOneWidget);
+      expect(find.text('55120993'), findsOneWidget);
+      expect(find.text(formatDate(paid)), findsOneWidget);
     });
 
     testWidgets('con la foto lee boleta y fecha, comprime y sube', (
@@ -449,8 +444,7 @@ void main() {
 
       // Boleta y fecha salen de la foto; se avisa del monto distinto.
       expect(find.text('55120993'), findsOneWidget);
-      expect(find.text('Selecciona la fecha'), findsNothing);
-      expect(find.textContaining('La leímos de la foto'), findsOneWidget);
+      expect(find.text('Se lee de la foto'), findsNothing);
       expect(find.textContaining('En la foto vemos Q 999.00'), findsOneWidget);
 
       await describe(tester, 'Depósito BI inscripción');
@@ -480,19 +474,13 @@ void main() {
       expect(find.text('No pudimos leer el comprobante'), findsOneWidget);
       expect(find.textContaining('la fecha ni el número'), findsOneWidget);
       expect(find.text('Repetir la foto'), findsOneWidget);
-      // Al primer intento todavía no se ofrece llenar a mano.
-      expect(find.textContaining('llenar los datos a mano'), findsNothing);
       await describe(tester, 'Depósito BI inscripción');
       expect(sendAction(tester), isNull);
 
-      // Segundo intento fallido: se puede seguir a mano.
+      // Los datos no se escriben a mano: aunque falle otra vez, solo se
+      // puede repetir la foto.
       await setPhoto(tester);
-      final manual = find.textContaining('llenar los datos a mano');
-      await tester.ensureVisible(manual);
-      await tester.tap(manual);
-      await tester.pumpAndSettle();
-      expect(find.text('No pudimos leer el comprobante'), findsNothing);
-      // Faltan la boleta y la fecha, que ahora escribe el padre.
+      expect(find.textContaining('llenar los datos a mano'), findsNothing);
       expect(sendAction(tester), isNull);
     });
 

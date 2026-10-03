@@ -47,11 +47,11 @@ class _FakeAuth extends MockAuthRepository {
 }
 
 void main() {
-  group('ProfileReviewStore', () {
+  group('ProfileReview', () {
     test('apellido "GOOGLE" o correo como nombre son de relleno', () {
-      expect(ProfileReviewStore.hasPlaceholderData(_googleJoker), isTrue);
+      expect(ProfileReview.needed(_googleJoker), isTrue);
       expect(
-        ProfileReviewStore.hasPlaceholderData(
+        ProfileReview.needed(
           const AppUser(
             id: 'x',
             email: 'a@b.com',
@@ -61,19 +61,10 @@ void main() {
         ),
         isTrue,
       );
-      expect(ProfileReviewStore.hasPlaceholderData(_real), isFalse);
     });
 
-    test('pide revisión la primera vez y no después de confirmar', () async {
-      final store = MemoryProfileReviewStore();
-      expect(await store.needsReview(_real), isTrue);
-      await store.markReviewed(_real.id);
-      expect(await store.needsReview(_real), isFalse);
-    });
-
-    test('datos de relleno se piden aunque ya haya confirmado', () async {
-      final store = MemoryProfileReviewStore()..reviewed.add(_googleJoker.id);
-      expect(await store.needsReview(_googleJoker), isTrue);
+    test('con nombre y apellido reales no se pide (en ningún dispositivo)', () {
+      expect(ProfileReview.needed(_real), isFalse);
     });
   });
 
@@ -82,7 +73,6 @@ void main() {
 
     setUp(() {
       GoogleFonts.config.allowRuntimeFetching = false;
-      ProfileReviewStore.instance = MemoryProfileReviewStore();
     });
 
     Future<void> open(WidgetTester tester, AppUser user) async {
@@ -118,7 +108,7 @@ void main() {
       },
     );
 
-    testWidgets('al confirmar guarda, marca revisado y entra', (tester) async {
+    testWidgets('al confirmar guarda en la cuenta y entra', (tester) async {
       await open(tester, _googleJoker);
 
       final fields = find.byType(TextFormField);
@@ -131,10 +121,8 @@ void main() {
 
       expect(auth.saved!.firstName, 'Carlos');
       expect(auth.saved!.firstLastName, 'Pérez');
-      expect(
-        await ProfileReviewStore.instance.isReviewed(_googleJoker.id),
-        isTrue,
-      );
+      // Ya con datos reales, otro dispositivo no lo vuelve a pedir.
+      expect(ProfileReview.needed(auth.profile), isFalse);
       expect(find.text('INICIO'), findsOneWidget);
     });
   });
