@@ -154,7 +154,8 @@ class _FamilyPageState extends State<FamilyPage> {
   Future<void> _openForm([Dependent? dependent]) async {
     final saved = await Navigator.of(context).push<Dependent>(
       MaterialPageRoute(
-        builder: (_) => DependentFormPage(dependent: dependent),
+        builder: (_) =>
+            DependentFormPage(dependent: dependent, categories: _categories),
       ),
     );
     if (saved == null || !mounted) return;

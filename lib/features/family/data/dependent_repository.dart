@@ -148,10 +148,10 @@ class MockDependentRepository implements DependentRepository {
   /// Imita la asignación por rangos de edad de la API con las categorías
   /// del mock.
   static int _categoryForAge(int age) => switch (age) {
-    <= 6 => 1,
-    <= 8 => 2,
-    <= 10 => 3,
-    <= 12 => 4,
+    <= 8 => 1,
+    <= 10 => 2,
+    <= 12 => 3,
+    <= 14 => 4,
     _ => 5,
   };
 }

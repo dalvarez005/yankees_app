@@ -233,6 +233,13 @@ class ApiClient {
         'La fecha de nacimiento no puede ser futura.',
     'FECHA DE NACIMIENTO NO PUEDE SER FUTURA':
         'La fecha de nacimiento no puede ser futura.',
+    'RANGO DE EDAD OBLIGATORIO': 'Indica las edades de la categoría.',
+    'INDIQUE EDAD MINIMA Y MAXIMA': 'Indica la edad mínima y la máxima.',
+    'LAS EDADES DEBEN ESTAR ENTRE 0 Y 120':
+        'Las edades deben estar entre 0 y 120 años.',
+    'LA EDAD MINIMA NO PUEDE SER MAYOR A LA MAXIMA':
+        'La edad mínima no puede ser mayor que la máxima.',
+    'RANGO DE EDAD INVALIDO': 'El rango de edad no es válido.',
     'NO HAY UNA CATEGORIA ACTIVA PARA LA EDAD DEL DEPENDIENTE':
         'El club no tiene una categoría para esa edad. Consulta con el club.',
     'AGE DEBE ESTAR ENTRE 0 Y 120': 'La edad debe estar entre 0 y 120 años.',
@@ -307,9 +314,18 @@ class ApiClient {
     final parts = message.split(',').map((m) => m.trim().toUpperCase());
     final translated = {
       for (final p in parts)
-        if (p.isNotEmpty) _known[p] ?? sentenceCase(p),
+        if (p.isNotEmpty) _known[p] ?? _withName(p) ?? sentenceCase(p),
     };
     return translated.join(' ');
+  }
+
+  static const _overlap = 'EL RANGO SE CRUZA CON LA CATEGORIA ';
+
+  /// Mensajes que traen un nombre al final.
+  static String? _withName(String p) {
+    if (!p.startsWith(_overlap)) return null;
+    final name = sentenceCase(p.substring(_overlap.length));
+    return 'Ese rango de edad se cruza con la categoría $name.';
   }
 
   /// "YA EXISTE EL CORREO" → "Ya existe el correo".

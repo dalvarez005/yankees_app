@@ -1,7 +1,13 @@
 import '../../../core/network/api_client.dart';
 
 class Category {
-  const Category({required this.id, required this.name, this.active = true});
+  const Category({
+    required this.id,
+    required this.name,
+    this.active = true,
+    this.ageFrom,
+    this.ageTo,
+  });
 
   final int id;
   final String name;
@@ -10,11 +16,40 @@ class Category {
   /// ya la tienen.
   final bool active;
 
+  /// Rango de edad (incluido) con el que la API asigna esta categoría a
+  /// cada hijo. null si no está configurado.
+  final int? ageFrom;
+  final int? ageTo;
+
+  bool get hasAgeRange => ageFrom != null && ageTo != null;
+
+  /// "7 a 8 años"; null sin rango.
+  String? get ageRangeLabel => !hasAgeRange
+      ? null
+      : ageFrom == ageTo
+      ? '$ageFrom ${ageFrom == 1 ? 'año' : 'años'}'
+      : '$ageFrom a $ageTo años';
+
+  bool covers(int age) => hasAgeRange && age >= ageFrom! && age <= ageTo!;
+
   factory Category.fromJson(Map<String, dynamic> json) => Category(
     id: (json['categoryId'] as num?)?.toInt() ?? 0,
     name: (json['categoryName'] ?? json['name'])?.toString() ?? '',
     active: json['status'] != 'I',
+    ageFrom: (json['ageFrom'] as num?)?.toInt(),
+    ageTo: (json['ageTo'] as num?)?.toInt(),
   );
+}
+
+/// La categoría activa que la API asignará a un hijo de [age] años; null si
+/// ninguna la cubre. Igual que en la base: ante un cruce gana la de inicio
+/// mayor.
+Category? categoryForAge(Iterable<Category> categories, int age) {
+  final matches = [
+    for (final c in categories)
+      if (c.active && c.covers(age)) c,
+  ]..sort((a, b) => b.ageFrom!.compareTo(a.ageFrom!));
+  return matches.firstOrNull;
 }
 
 class CategoryException implements Exception {
@@ -32,10 +67,19 @@ abstract class CategoryRepository {
 
   /// Todas (activas e inactivas).
   Future<List<Category>> list();
-  Future<Category> create(String name);
+  Future<Category> create(
+    String name, {
+    required int ageFrom,
+    required int ageTo,
+  });
 
   /// Solo categorías activas.
-  Future<Category> rename(int id, String name);
+  Future<Category> update(
+    int id,
+    String name, {
+    required int ageFrom,
+    required int ageTo,
+  });
 
   /// La API lo rechaza si algún hijo la tiene asignada.
   Future<Category> deactivate(int id);
@@ -60,12 +104,28 @@ class ApiCategoryRepository implements CategoryRepository {
   }
 
   @override
-  Future<Category> create(String name) =>
-      _save('A', {'categoryName': name.trim()});
+  Future<Category> create(
+    String name, {
+    required int ageFrom,
+    required int ageTo,
+  }) => _save('A', {
+    'categoryName': name.trim(),
+    'ageFrom': ageFrom,
+    'ageTo': ageTo,
+  });
 
   @override
-  Future<Category> rename(int id, String name) =>
-      _save('U', {'categoryId': id, 'categoryName': name.trim()});
+  Future<Category> update(
+    int id,
+    String name, {
+    required int ageFrom,
+    required int ageTo,
+  }) => _save('U', {
+    'categoryId': id,
+    'categoryName': name.trim(),
+    'ageFrom': ageFrom,
+    'ageTo': ageTo,
+  });
 
   @override
   Future<Category> deactivate(int id) => _save('D', {'categoryId': id});
@@ -107,14 +167,14 @@ class MockCategoryRepository implements CategoryRepository {
 
   final Duration latency;
   final _items = <Category>[
-    for (final (i, n) in const [
-      'Moscos',
-      'Preinfantil',
-      'Infantil',
-      'Intermedia',
-      'Juvenil',
+    for (final (i, (n, from, to)) in const [
+      ('Moscos', 7, 8),
+      ('Preinfantil', 9, 10),
+      ('Infantil', 11, 12),
+      ('Intermedia', 13, 14),
+      ('Juvenil', 15, 18),
     ].indexed)
-      Category(id: i + 1, name: n),
+      Category(id: i + 1, name: n, ageFrom: from, ageTo: to),
   ];
 
   @override
@@ -124,34 +184,72 @@ class MockCategoryRepository implements CategoryRepository {
   }
 
   @override
-  Future<Category> create(String name) async {
+  Future<Category> create(
+    String name, {
+    required int ageFrom,
+    required int ageTo,
+  }) async {
     await Future.delayed(latency);
     _checkUnique(name);
-    final c = Category(id: _items.length + 1, name: name.trim());
+    _checkRange(ageFrom, ageTo);
+    final c = Category(
+      id: _items.length + 1,
+      name: name.trim(),
+      ageFrom: ageFrom,
+      ageTo: ageTo,
+    );
     _items.add(c);
     return c;
   }
 
   @override
-  Future<Category> rename(int id, String name) async {
+  Future<Category> update(
+    int id,
+    String name, {
+    required int ageFrom,
+    required int ageTo,
+  }) async {
     await Future.delayed(latency);
     _checkUnique(name, except: id);
+    _checkRange(ageFrom, ageTo, except: id);
     final i = _items.indexWhere((c) => c.id == id);
-    return _items[i] = Category(id: id, name: name.trim());
+    return _items[i] = Category(
+      id: id,
+      name: name.trim(),
+      ageFrom: ageFrom,
+      ageTo: ageTo,
+    );
   }
 
   @override
-  Future<Category> deactivate(int id) async {
-    await Future.delayed(latency);
-    final i = _items.indexWhere((c) => c.id == id);
-    return _items[i] = Category(id: id, name: _items[i].name, active: false);
-  }
+  Future<Category> deactivate(int id) => _setActive(id, false);
 
   @override
-  Future<Category> reactivate(int id) async {
+  Future<Category> reactivate(int id) => _setActive(id, true);
+
+  Future<Category> _setActive(int id, bool active) async {
     await Future.delayed(latency);
     final i = _items.indexWhere((c) => c.id == id);
-    return _items[i] = Category(id: id, name: _items[i].name);
+    final c = _items[i];
+    return _items[i] = Category(
+      id: id,
+      name: c.name,
+      active: active,
+      ageFrom: c.ageFrom,
+      ageTo: c.ageTo,
+    );
+  }
+
+  /// Como la API: el rango no puede cruzarse con el de otra activa.
+  void _checkRange(int from, int to, {int? except}) {
+    for (final c in _items) {
+      if (c.id == except || !c.active || !c.hasAgeRange) continue;
+      if (from <= c.ageTo! && to >= c.ageFrom!) {
+        throw CategoryException(
+          'Ese rango se cruza con la categoría ${c.name}.',
+        );
+      }
+    }
   }
 
   void _checkUnique(String name, {int? except}) {

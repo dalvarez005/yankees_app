@@ -88,8 +88,8 @@ void main() {
     expect(find.text('Sofía Castro'), findsOneWidget);
     final age = ageAt(DateTime(2018, 1, 15), DateTime.now());
     expect(find.text('$age años · CUI 1234 56789 0101'), findsOneWidget);
-    // La categoría viene del catálogo (id 2 = Preinfantil en el mock).
-    expect(find.text('Preinfantil'), findsOneWidget);
+    // La asigna la edad con los rangos del mock (Moscos 7-8, Preinfantil 9-10).
+    expect(find.text(age <= 8 ? 'Moscos' : 'Preinfantil'), findsOneWidget);
     expect(find.text('Tienes 1 hijo registrado.'), findsOneWidget);
   });
 
@@ -127,7 +127,10 @@ void main() {
 
       expect(find.text('Fecha de nacimiento'), findsOneWidget);
       expect(find.text('Selecciona la fecha'), findsOneWidget);
-      expect(find.text('Se asigna al guardar'), findsOneWidget);
+      expect(
+        find.text('Se asigna según la fecha de nacimiento'),
+        findsOneWidget,
+      );
     },
   );
 

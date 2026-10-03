@@ -6,6 +6,7 @@ import '../../auth/presentation/validators.dart';
 import '../../auth/presentation/widgets/auth_field.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
 import '../../../core/format/formats.dart';
+import '../../categories/data/category_repository.dart';
 import '../data/dependent.dart';
 import '../data/dependent_repository.dart';
 import '../../../core/widgets/feedback.dart';
@@ -16,7 +17,14 @@ import '../../../core/widgets/form_ready.dart';
 /// Se pide la fecha de nacimiento; la API calcula la edad y asigna la
 /// categoría según los rangos de edad del club.
 class DependentFormPage extends StatefulWidget {
-  const DependentFormPage({super.key, this.dependent});
+  const DependentFormPage({
+    super.key,
+    this.dependent,
+    this.categories = const [],
+  });
+
+  /// Catálogo con los rangos de edad, para mostrar qué categoría tocará.
+  final List<Category> categories;
 
   /// null = agregar; con valor = editar.
   final Dependent? dependent;
@@ -45,14 +53,32 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
 
   bool get _isEdit => widget.dependent != null;
 
-  bool get _ready =>
+  /// Hay rangos configurados: se puede anticipar la categoría.
+  bool get _canPreview =>
+      widget.categories.any((c) => c.active && c.hasAgeRange);
+
+  int? get _age =>
+      _birthDate == null ? null : ageAt(_birthDate!, DateTime.now());
+
+  /// Categoría que asignará la API; null si ninguna cubre la edad.
+  Category? get _category {
+    final age = _age;
+    return age == null ? null : categoryForAge(widget.categories, age);
+  }
+
+  /// Con la fecha elegida no hay categoría para esa edad.
+  bool get _outOfRange => _canPreview && _age != null && _category == null;
+
+  /// Todo lo escrito está bien: solo falta (si falta) la fecha.
+  bool get _textReady =>
       Validators.cui(_cui.text) == null &&
       Validators.name(_firstName.text, 'El nombre') == null &&
       Validators.optionalName(_secondName.text, 'El segundo nombre') == null &&
       Validators.name(_firstLastName.text, 'El apellido') == null &&
       Validators.optionalName(_secondLastName.text, 'El segundo apellido') ==
-          null &&
-      _birthDate != null;
+          null;
+
+  bool get _ready => _textReady && _birthDate != null && !_outOfRange;
 
   @override
   void initState() {
@@ -105,6 +131,17 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  String get _outOfRangeMessage {
+    final ranges = [
+      for (final c in widget.categories)
+        if (c.active && c.hasAgeRange) c,
+    ];
+    final min = ranges.map((c) => c.ageFrom!).reduce((a, b) => a < b ? a : b);
+    final max = ranges.map((c) => c.ageTo!).reduce((a, b) => a > b ? a : b);
+    return 'El club no tiene una categoría para $_age '
+        '${_age == 1 ? 'año' : 'años'}. Las categorías van de $min a $max años.';
   }
 
   Future<void> _pickBirthDate() async {
@@ -203,14 +240,18 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
                     _BirthDateField(
                       value: _birthDate,
                       onTap: _saving ? null : _pickBirthDate,
+                      // En rojo cuando es lo único que falta para guardar.
+                      highlightMissing: _textReady,
                     ),
                     gap,
                     _CategoryInfo(
-                      current:
-                          _isEdit && _birthDate == widget.dependent!.birthDate
-                          ? widget.dependent!.categoryName ?? 'Sin categoría'
-                          : null,
-                      changed: _isEdit,
+                      name: _canPreview
+                          ? _category?.name
+                          : (_isEdit &&
+                                    _birthDate == widget.dependent!.birthDate
+                                ? widget.dependent!.categoryName
+                                : null),
+                      error: _outOfRange ? _outOfRangeMessage : null,
                     ),
                     const SizedBox(height: 28),
                     LoadingButton(
@@ -230,10 +271,17 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
 }
 
 class _BirthDateField extends StatelessWidget {
-  const _BirthDateField({required this.value, required this.onTap});
+  const _BirthDateField({
+    required this.value,
+    required this.onTap,
+    required this.highlightMissing,
+  });
 
   final DateTime? value;
   final VoidCallback? onTap;
+
+  /// Sin fecha: el aviso de obligatoria pasa a rojo.
+  final bool highlightMissing;
 
   @override
   Widget build(BuildContext context) {
@@ -255,9 +303,15 @@ class _BirthDateField extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(14),
           child: InputDecorator(
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.cake_outlined, size: 20),
-              suffixIcon: Icon(Icons.calendar_month_outlined, size: 20),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.cake_outlined, size: 20),
+              suffixIcon: const Icon(Icons.calendar_month_outlined, size: 20),
+              errorText: date == null && highlightMissing
+                  ? 'La fecha de nacimiento es obligatoria'
+                  : null,
+              helperText: date == null && !highlightMissing
+                  ? 'Obligatoria'
+                  : null,
             ),
             child: Text(
               date == null
@@ -276,18 +330,19 @@ class _BirthDateField extends StatelessWidget {
 
 /// Categoría solo informativa: la asigna la API según la edad.
 class _CategoryInfo extends StatelessWidget {
-  const _CategoryInfo({required this.current, required this.changed});
+  const _CategoryInfo({required this.name, required this.error});
 
-  /// Categoría actual (al editar sin cambiar la fecha); null si aún no se sabe.
-  final String? current;
+  /// Categoría que corresponde; null si todavía no se sabe.
+  final String? name;
 
-  /// Editando con una fecha nueva: se recalcula al guardar.
-  final bool changed;
+  /// La edad no cae en ninguna categoría.
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final name = current;
+    final n = name;
+    final e = error;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -300,25 +355,36 @@ class _CategoryInfo extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         InputDecorator(
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             enabled: false,
-            prefixIcon: Icon(Icons.sports_baseball_outlined, size: 20),
+            prefixIcon: Icon(
+              e == null
+                  ? Icons.sports_baseball_outlined
+                  : Icons.error_outline_rounded,
+              size: 20,
+              color: e == null ? null : AppColors.error,
+            ),
           ),
           child: Text(
-            name ??
-                (changed
-                    ? 'Se actualiza al guardar con la nueva fecha'
-                    : 'Se asigna al guardar'),
+            e != null
+                ? 'Sin categoría para esa edad'
+                : n ?? 'Se asigna según la fecha de nacimiento',
             style: text.bodyLarge?.copyWith(
-              color: name == null ? AppColors.textMuted : AppColors.text,
-              fontWeight: name == null ? null : FontWeight.w600,
+              color: e != null
+                  ? AppColors.error
+                  : n == null
+                  ? AppColors.textMuted
+                  : AppColors.text,
+              fontWeight: n == null && e == null ? null : FontWeight.w600,
             ),
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'El club asigna la categoría automáticamente según la edad.',
-          style: text.bodySmall?.copyWith(color: AppColors.textMuted),
+          e ?? 'El club asigna la categoría automáticamente según la edad.',
+          style: text.bodySmall?.copyWith(
+            color: e == null ? AppColors.textMuted : AppColors.error,
+          ),
         ),
       ],
     );

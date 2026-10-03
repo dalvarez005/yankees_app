@@ -335,16 +335,37 @@ void main() {
       ]);
     });
 
-    test('categorías: renombrar manda categoryName', () async {
+    test('categorías: editar manda nombre y rango de edad', () async {
       final repo = ApiCategoryRepository(
         api({'responseCode': '00', 'categoryData': {}}),
       );
-      await repo.rename(6, ' Juvenil B ');
+      await repo.update(6, ' Juvenil B ', ageFrom: 15, ageTo: 18);
       expect(sent(), {
         'typeOperation': 'U',
-        'categoryData': {'categoryId': 6, 'categoryName': 'Juvenil B'},
+        'categoryData': {
+          'categoryId': 6,
+          'categoryName': 'Juvenil B',
+          'ageFrom': 15,
+          'ageTo': 18,
+        },
       });
     });
+
+    test(
+      'categorías: la edad decide la categoría; fuera de rango, ninguna',
+      () {
+        const cats = [
+          Category(id: 1, name: 'Moscos', ageFrom: 7, ageTo: 8),
+          Category(id: 2, name: 'Preinfantil', ageFrom: 9, ageTo: 10),
+          Category(id: 3, name: 'Vieja', active: false, ageFrom: 11, ageTo: 12),
+        ];
+        expect(categoryForAge(cats, 8)?.name, 'Moscos');
+        expect(categoryForAge(cats, 9)?.name, 'Preinfantil');
+        expect(categoryForAge(cats, 11), isNull);
+        expect(categoryForAge(cats, 4), isNull);
+        expect(cats.first.ageRangeLabel, '7 a 8 años');
+      },
+    );
 
     test('403 de la API se muestra en español', () async {
       final repo = ApiAdminRepository(

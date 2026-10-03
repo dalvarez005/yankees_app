@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../app/app_colors.dart';
 import '../../../core/access/permissions.dart';
@@ -171,9 +172,10 @@ class _CategoryTile extends StatelessWidget {
         muted: !c.active,
       ),
       title: c.name,
-      subtitle: c.active
-          ? 'Disponible para inscribir hijos'
-          : 'No se ofrece a hijos nuevos',
+      subtitle: [
+        c.ageRangeLabel ?? 'Sin rango de edad',
+        if (!c.active) 'inactiva',
+      ].join(' · '),
       trailing: onEdit == null
           ? Padding(
               padding: const EdgeInsets.only(right: 4),
@@ -216,7 +218,29 @@ class _CategoryForm extends StatefulWidget {
 class _CategoryFormState extends State<_CategoryForm> with FormReady {
   final _formKey = GlobalKey<FormState>();
   late final _name = TextEditingController(text: widget.category?.name);
+  late final _from = TextEditingController(
+    text: widget.category?.ageFrom?.toString(),
+  );
+  late final _to = TextEditingController(
+    text: widget.category?.ageTo?.toString(),
+  );
   bool _saving = false;
+
+  static String? _ageError(String? v) {
+    final age = int.tryParse(v?.trim() ?? '');
+    if (age == null) return 'Obligatoria';
+    if (age > 120) return 'Máximo 120';
+    return null;
+  }
+
+  int? get _ageFrom => int.tryParse(_from.text.trim());
+  int? get _ageTo => int.tryParse(_to.text.trim());
+
+  String? get _rangeError {
+    final from = _ageFrom, to = _ageTo;
+    if (from == null || to == null) return null;
+    return from > to ? 'La edad mínima no puede ser mayor que la máxima' : null;
+  }
 
   static String? _nameError(String? v) {
     final t = v?.trim() ?? '';
@@ -225,20 +249,30 @@ class _CategoryFormState extends State<_CategoryForm> with FormReady {
     return null;
   }
 
-  /// Completo y, al editar, distinto del nombre actual.
-  bool get _ready =>
-      _nameError(_name.text) == null &&
-      _name.text.trim() != (widget.category?.name ?? '');
+  /// Completo y, al editar, con algún cambio.
+  bool get _ready {
+    final c = widget.category;
+    return _nameError(_name.text) == null &&
+        _ageError(_from.text) == null &&
+        _ageError(_to.text) == null &&
+        _rangeError == null &&
+        (c == null ||
+            _name.text.trim() != c.name ||
+            _ageFrom != c.ageFrom ||
+            _ageTo != c.ageTo);
+  }
 
   @override
   void initState() {
     super.initState();
-    watchFields([_name]);
+    watchFields([_name, _from, _to]);
   }
 
   @override
   void dispose() {
     _name.dispose();
+    _from.dispose();
+    _to.dispose();
     super.dispose();
   }
 
@@ -249,8 +283,13 @@ class _CategoryFormState extends State<_CategoryForm> with FormReady {
       final repo = CategoryRepository.instance;
       final c = widget.category;
       final saved = c == null
-          ? await repo.create(_name.text)
-          : await repo.rename(c.id, _name.text);
+          ? await repo.create(_name.text, ageFrom: _ageFrom!, ageTo: _ageTo!)
+          : await repo.update(
+              c.id,
+              _name.text,
+              ageFrom: _ageFrom!,
+              ageTo: _ageTo!,
+            );
       if (mounted) Navigator.of(context).pop(saved);
     } on CategoryException catch (e) {
       if (mounted) showAppMessage(context, e.message, error: true);
@@ -287,9 +326,48 @@ class _CategoryFormState extends State<_CategoryForm> with FormReady {
               icon: Icons.sports_baseball_outlined,
               controller: _name,
               textCapitalization: TextCapitalization.sentences,
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _save(),
               validator: _nameError,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _AgeField(
+                    label: 'Edad desde',
+                    hint: 'Ej. 7',
+                    controller: _from,
+                    validator: _ageError,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _AgeField(
+                    label: 'Edad hasta',
+                    hint: 'Ej. 8',
+                    controller: _to,
+                    validator: _ageError,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) {
+                      if (_ready) _save();
+                    },
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 4),
+              child: Text(
+                _rangeError ??
+                    'Los hijos se asignan a esta categoría según su edad '
+                        '(ambas edades incluidas).',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _rangeError == null
+                      ? AppColors.textMuted
+                      : AppColors.error,
+                ),
+              ),
             ),
             const SizedBox(height: 24),
             LoadingButton(
@@ -302,4 +380,38 @@ class _CategoryFormState extends State<_CategoryForm> with FormReady {
       ),
     );
   }
+}
+
+class _AgeField extends StatelessWidget {
+  const _AgeField({
+    required this.label,
+    required this.hint,
+    required this.controller,
+    required this.validator,
+    this.textInputAction = TextInputAction.next,
+    this.onSubmitted,
+  });
+
+  final String label;
+  final String hint;
+  final TextEditingController controller;
+  final String? Function(String?) validator;
+  final TextInputAction textInputAction;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  Widget build(BuildContext context) => AuthField(
+    label: label,
+    hint: hint,
+    icon: Icons.cake_outlined,
+    controller: controller,
+    keyboardType: TextInputType.number,
+    textInputAction: textInputAction,
+    inputFormatters: [
+      FilteringTextInputFormatter.digitsOnly,
+      LengthLimitingTextInputFormatter(3),
+    ],
+    validator: validator,
+    onSubmitted: onSubmitted,
+  );
 }
