@@ -5,23 +5,18 @@ import '../../../app/app_colors.dart';
 import '../../auth/presentation/validators.dart';
 import '../../auth/presentation/widgets/auth_field.dart';
 import '../../auth/presentation/widgets/loading_button.dart';
-import '../../categories/data/category_repository.dart';
+import '../../../core/format/formats.dart';
 import '../data/dependent.dart';
 import '../data/dependent_repository.dart';
 import '../../../core/widgets/feedback.dart';
 import '../../../core/widgets/form_ready.dart';
 
 /// Alta o edición de un hijo. Devuelve el [Dependent] guardado al cerrar.
+///
+/// Se pide la fecha de nacimiento; la API calcula la edad y asigna la
+/// categoría según los rangos de edad del club.
 class DependentFormPage extends StatefulWidget {
-  const DependentFormPage({
-    super.key,
-    this.dependent,
-    required this.categories,
-  });
-
-  /// Catálogo completo; se ofrecen las activas y, al editar, también la
-  /// actual aunque esté inactiva.
-  final List<Category> categories;
+  const DependentFormPage({super.key, this.dependent});
 
   /// null = agregar; con valor = editar.
   final Dependent? dependent;
@@ -45,20 +40,10 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
   late final _secondLastName = TextEditingController(
     text: widget.dependent?.secondLastName,
   );
-  late final _age = TextEditingController(
-    text: widget.dependent?.age?.toString(),
-  );
-  late int? _categoryId = widget.dependent?.categoryId;
+  late DateTime? _birthDate = widget.dependent?.birthDate;
   bool _saving = false;
 
   bool get _isEdit => widget.dependent != null;
-
-  static String? _ageError(String? v) {
-    final age = int.tryParse(v?.trim() ?? '');
-    if (age == null) return 'La edad es obligatoria';
-    if (age > 120) return 'Edad no válida';
-    return null;
-  }
 
   bool get _ready =>
       Validators.cui(_cui.text) == null &&
@@ -67,8 +52,7 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
       Validators.name(_firstLastName.text, 'El apellido') == null &&
       Validators.optionalName(_secondLastName.text, 'El segundo apellido') ==
           null &&
-      _ageError(_age.text) == null &&
-      _categoryId != null;
+      _birthDate != null;
 
   @override
   void initState() {
@@ -79,7 +63,6 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
       _secondName,
       _firstLastName,
       _secondLastName,
-      _age,
     ]);
   }
 
@@ -91,7 +74,6 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
       _secondName,
       _firstLastName,
       _secondLastName,
-      _age,
     ]) {
       c.dispose();
     }
@@ -108,8 +90,7 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
       secondName: _secondName.text.trim(),
       firstLastName: _firstLastName.text.trim(),
       secondLastName: _secondLastName.text.trim(),
-      categoryId: _categoryId!,
-      age: int.parse(_age.text.trim()),
+      birthDate: _birthDate!,
     );
     try {
       final repo = DependentRepository.instance;
@@ -124,6 +105,22 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _pickBirthDate() async {
+    FocusScope.of(context).unfocus();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _birthDate ?? DateTime(now.year - 8, now.month, now.day),
+      firstDate: DateTime(now.year - 120),
+      lastDate: today,
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      initialDatePickerMode: DatePickerMode.year,
+      helpText: 'Fecha de nacimiento',
+    );
+    if (picked != null && mounted) setState(() => _birthDate = picked);
   }
 
   @override
@@ -203,28 +200,9 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
                           Validators.optionalName(v, 'El segundo apellido'),
                     ),
                     gap,
-                    AuthField(
-                      label: 'Edad',
-                      hint: 'Ej. 9',
-                      icon: Icons.cake_outlined,
-                      controller: _age,
-                      keyboardType: TextInputType.number,
-                      textInputAction: TextInputAction.done,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(3),
-                      ],
-                      validator: _ageError,
-                    ),
-                    gap,
-                    _CategoryField(
-                      categories: [
-                        for (final c in widget.categories)
-                          if (c.active || c.id == widget.dependent?.categoryId)
-                            c,
-                      ],
-                      value: _categoryId,
-                      onChanged: (v) => setState(() => _categoryId = v),
+                    _BirthDateField(
+                      value: _birthDate,
+                      onTap: _saving ? null : _pickBirthDate,
                     ),
                     const SizedBox(height: 28),
                     LoadingButton(
@@ -243,45 +221,50 @@ class _DependentFormPageState extends State<DependentFormPage> with FormReady {
   }
 }
 
-class _CategoryField extends StatelessWidget {
-  const _CategoryField({
-    required this.categories,
-    required this.value,
-    required this.onChanged,
-  });
+class _BirthDateField extends StatelessWidget {
+  const _BirthDateField({required this.value, required this.onTap});
 
-  final List<Category> categories;
-
-  final int? value;
-  final ValueChanged<int?> onChanged;
+  final DateTime? value;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final date = value;
+    final age = date == null ? null : ageAt(date, DateTime.now());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Categoría',
-          style: Theme.of(context).textTheme.labelLarge
-              ?.copyWith(color: AppColors.text, fontWeight: FontWeight.w600),
+          'Fecha de nacimiento',
+          style: text.labelLarge?.copyWith(
+            color: AppColors.text,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 8),
-        DropdownButtonFormField<int>(
-          initialValue: value,
-          onChanged: onChanged,
-          validator: (v) => v == null ? 'Elige una categoría' : null,
-          decoration: const InputDecoration(
-            hintText: 'Selecciona',
-            prefixIcon: Icon(Icons.sports_baseball_outlined, size: 20),
-          ),
+        InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(14),
-          items: [
-            for (final c in categories)
-              DropdownMenuItem(
-                value: c.id,
-                child: Text(c.active ? c.name : '${c.name} (inactiva)'),
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.cake_outlined, size: 20),
+              suffixIcon: Icon(Icons.calendar_month_outlined, size: 20),
+            ),
+            child: Text(
+              date == null
+                  ? 'Selecciona la fecha'
+                  : '${formatDate(date)} · ${age == 1 ? '1 año' : '$age años'}',
+              style: text.bodyLarge?.copyWith(
+                color: date == null ? AppColors.textMuted : AppColors.text,
               ),
-          ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'La categoría se asigna automáticamente según la edad.',
+          style: text.bodySmall?.copyWith(color: AppColors.textMuted),
         ),
       ],
     );

@@ -140,7 +140,18 @@ class MockDependentRepository implements DependentRepository {
     secondName: input.secondName,
     firstLastName: input.firstLastName,
     secondLastName: input.secondLastName,
-    categoryId: input.categoryId,
-    age: input.age,
+    categoryId: _categoryForAge(ageAt(input.birthDate, DateTime.now())),
+    age: ageAt(input.birthDate, DateTime.now()),
+    birthDate: input.birthDate,
   );
+
+  /// Imita la asignación por rangos de edad de la API con las categorías
+  /// del mock.
+  static int _categoryForAge(int age) => switch (age) {
+    <= 6 => 1,
+    <= 8 => 2,
+    <= 10 => 3,
+    <= 12 => 4,
+    _ => 5,
+  };
 }

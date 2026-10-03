@@ -78,17 +78,16 @@ Future<void> main() async {
 /// Modo sin API: dos hijos de ejemplo para que se vean cobros y pagos.
 Future<void> _seedMockFamily() async {
   final repo = DependentRepository.instance;
-  for (final (cui, name, category) in [
-    ('3004013889191', 'Sofía', 3),
-    ('3004013889192', 'Mateo', 2),
+  for (final (cui, name, birthDate) in [
+    ('3004013889191', 'Sofía', DateTime(2017, 3, 9)),
+    ('3004013889192', 'Mateo', DateTime(2019, 6, 21)),
   ]) {
     await repo.add(
       DependentInput(
         cui: cui,
         firstName: name,
         firstLastName: 'Castro',
-        categoryId: category,
-        age: category == 3 ? 9 : 7,
+        birthDate: birthDate,
       ),
     );
   }

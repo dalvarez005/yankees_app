@@ -10,6 +10,7 @@ class Dependent {
     this.secondName,
     this.secondLastName,
     this.age,
+    this.birthDate,
   });
 
   final String id;
@@ -25,8 +26,11 @@ class Dependent {
   /// Nombre que manda la API al listar (en la lista no viene el id).
   final String? categoryName;
 
-  /// Años; null en registros anteriores a que la API la pidiera.
+  /// Años, calculados por la API a partir de [birthDate].
   final int? age;
+
+  /// Fecha de nacimiento; null en registros anteriores a que la API la pidiera.
+  final DateTime? birthDate;
 
   String get fullName => [
     firstName,
@@ -55,6 +59,7 @@ class Dependent {
     categoryId: id,
     categoryName: categoryName,
     age: age,
+    birthDate: birthDate,
   );
 
   factory Dependent.fromJson(Map<String, dynamic> json) => Dependent(
@@ -67,6 +72,7 @@ class Dependent {
     categoryId: (json['categoryId'] as num?)?.toInt() ?? 0,
     categoryName: _blankToNull(json['categoryName']),
     age: (json['age'] as num?)?.toInt(),
+    birthDate: DateTime.tryParse(json['birthDate']?.toString() ?? ''),
   );
 
   static String? _blankToNull(Object? v) {
@@ -75,14 +81,14 @@ class Dependent {
   }
 }
 
-/// Datos que se envían al crear o editar.
+/// Datos que se envían al crear o editar. La edad y la categoría no se
+/// envían: la API las calcula con la fecha de nacimiento.
 class DependentInput {
   const DependentInput({
     required this.cui,
     required this.firstName,
     required this.firstLastName,
-    required this.categoryId,
-    required this.age,
+    required this.birthDate,
     this.secondName,
     this.secondLastName,
   });
@@ -92,8 +98,7 @@ class DependentInput {
   final String? secondName;
   final String firstLastName;
   final String? secondLastName;
-  final int categoryId;
-  final int age;
+  final DateTime birthDate;
 
   Map<String, dynamic> toJson() => {
     'cui': cui,
@@ -102,7 +107,22 @@ class DependentInput {
     'firstLastName': firstLastName,
     if (secondLastName != null && secondLastName!.isNotEmpty)
       'secondLastName': secondLastName,
-    'categoryId': categoryId,
-    'age': age,
+    'dateBirthday': isoDate(birthDate),
   };
+}
+
+/// "2017-03-09": la fecha sin hora ni zona, como la espera la API.
+String isoDate(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-'
+    '${d.month.toString().padLeft(2, '0')}-'
+    '${d.day.toString().padLeft(2, '0')}';
+
+/// Años cumplidos a [today].
+int ageAt(DateTime birthDate, DateTime today) {
+  var age = today.year - birthDate.year;
+  if (today.month < birthDate.month ||
+      (today.month == birthDate.month && today.day < birthDate.day)) {
+    age--;
+  }
+  return age;
 }

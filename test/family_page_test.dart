@@ -74,12 +74,11 @@ void main() {
   testWidgets('lista a los hijos con CUI y categoría', (tester) async {
     await tester.runAsync(
       () => DependentRepository.instance.add(
-        const DependentInput(
+        DependentInput(
           cui: '1234567890101',
           firstName: 'Sofía',
           firstLastName: 'Castro',
-          categoryId: 2,
-          age: 8,
+          birthDate: DateTime(2018, 1, 15),
         ),
       ),
     );
@@ -87,7 +86,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sofía Castro'), findsOneWidget);
-    expect(find.text('8 años · CUI 1234 56789 0101'), findsOneWidget);
+    final age = ageAt(DateTime(2018, 1, 15), DateTime.now());
+    expect(find.text('$age años · CUI 1234 56789 0101'), findsOneWidget);
     // La categoría viene del catálogo (id 2 = Preinfantil en el mock).
     expect(find.text('Preinfantil'), findsOneWidget);
     expect(find.text('Tienes 1 hijo registrado.'), findsOneWidget);
@@ -116,27 +116,25 @@ void main() {
     expect(find.text('Estás al día'), findsOneWidget);
   });
 
-  testWidgets('el formulario ofrece solo categorías activas', (tester) async {
+  testWidgets('el formulario pide la fecha de nacimiento, no la categoría', (
+    tester,
+  ) async {
     _tall(tester);
-    await tester.runAsync(
-      () => CategoryRepository.instance.deactivate(1), // Moscos
-    );
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Agregar hijo'));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('Selecciona'));
-    await tester.tap(find.text('Selecciona'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Infantil'), findsWidgets);
-    expect(find.text('Moscos'), findsNothing);
+    expect(find.text('Fecha de nacimiento'), findsOneWidget);
+    expect(find.text('Selecciona la fecha'), findsOneWidget);
+    expect(find.text('Categoría'), findsNothing);
+    expect(
+      find.text('La categoría se asigna automáticamente según la edad.'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('el formulario valida CUI, nombre, apellido y categoría', (
-    tester,
-  ) async {
+  testWidgets('el formulario valida CUI, nombre y apellido', (tester) async {
     _tall(tester);
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
@@ -151,6 +149,5 @@ void main() {
     expect(find.text('El CUI debe tener 13 dígitos'), findsOneWidget);
     expect(find.text('El nombre es obligatorio'), findsOneWidget);
     expect(find.text('El apellido es obligatorio'), findsOneWidget);
-    expect(find.text('Elige una categoría'), findsOneWidget);
   });
 }

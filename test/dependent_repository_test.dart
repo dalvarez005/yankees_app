@@ -29,13 +29,12 @@ void main() {
     headers: {'content-type': 'application/json; charset=utf-8'},
   );
 
-  const input = DependentInput(
+  final input = DependentInput(
     cui: '1234567890101',
     firstName: 'Sofía',
     secondName: '',
     firstLastName: 'Castro',
-    categoryId: 2,
-    age: 8,
+    birthDate: DateTime(2018, 3, 9),
   );
 
   Map<String, dynamic> dependentJson() => {
@@ -49,6 +48,7 @@ void main() {
     'categoryId': 2,
     'status': 'A',
     'age': 9,
+    'birthDate': '2017-03-09',
   };
 
   test('list hace GET GetDependentDataForUser y mapea los hijos', () async {
@@ -66,6 +66,7 @@ void main() {
     expect(items.single.formattedCui, '1234 56789 0101');
     expect(items.single.categoryId, 2);
     expect(items.single.age, 9);
+    expect(items.single.birthDate, DateTime(2017, 3, 9));
   });
 
   test('list vacía', () async {
@@ -92,8 +93,7 @@ void main() {
         'cui': '1234567890101',
         'firstName': 'Sofía',
         'firstLastName': 'Castro',
-        'categoryId': 2,
-        'age': 8,
+        'dateBirthday': '2018-03-09',
       },
     });
     expect(created.id, 'd-1');

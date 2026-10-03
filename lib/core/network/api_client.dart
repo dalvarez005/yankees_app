@@ -216,6 +216,14 @@ class ApiClient {
     'EMAIL NO VALIDO': 'Escribe un correo válido.',
     'EMAIL OBLIGATORIO O INVALIDO': 'Escribe un correo válido.',
     'AGE ES OBLIGATORIO': 'Escribe la edad.',
+    'DATEBIRTHDAY ES OBLIGATORIO': 'Elige la fecha de nacimiento.',
+    'FECHA OBLIGATORIA': 'Elige la fecha de nacimiento.',
+    'DATEBIRTHDAY NO PUEDE SER UNA FECHA FUTURA':
+        'La fecha de nacimiento no puede ser futura.',
+    'FECHA DE NACIMIENTO NO PUEDE SER FUTURA':
+        'La fecha de nacimiento no puede ser futura.',
+    'NO HAY UNA CATEGORIA ACTIVA PARA LA EDAD DEL DEPENDIENTE':
+        'El club no tiene una categoría para esa edad. Consulta con el club.',
     'AGE DEBE ESTAR ENTRE 0 Y 120': 'La edad debe estar entre 0 y 120 años.',
     'EDAD DEBE ESTAR ENTRE 0 Y 120': 'La edad debe estar entre 0 y 120 años.',
     'CUI YA ASOCIADO A UN DEPENDIENTE ACTIVO': 'Ese CUI ya está registrado.',
