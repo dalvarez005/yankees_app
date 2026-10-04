@@ -150,6 +150,7 @@ class YankeesApp extends StatelessWidget {
       title: 'Club Yankees',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      scrollBehavior: const AppScrollBehavior(),
       navigatorKey: _navigatorKey,
       onGenerateInitialRoutes: (_) => [
         initialUser == null

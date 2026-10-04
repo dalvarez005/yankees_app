@@ -106,3 +106,14 @@ class _FadePageTransitionsBuilder extends PageTransitionsBuilder {
     child: child,
   );
 }
+
+/// Sin el rebote de iOS al deslizar: al tirar hacia abajo para recargar, el
+/// rebote despegaba la lista del encabezado azul y dejaba ver el fondo claro.
+/// Así la lista queda pegada y se ve el indicador circular de recarga.
+class AppScrollBehavior extends MaterialScrollBehavior {
+  const AppScrollBehavior();
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) =>
+      const ClampingScrollPhysics();
+}
