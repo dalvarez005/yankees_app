@@ -5,14 +5,15 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Hijos, cuotas y comprobantes de pago del Club Yankees.">
   <meta name="theme-color" content="#0C2340">
 
   <!-- iPhone: "Compartir > Agregar a inicio" la abre a pantalla completa. -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!-- "black" y no "black-translucent": con la barra translúcida iOS dibuja
+       la página debajo de la barra pero calcula los toques corridos. -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Yankees">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
@@ -35,10 +36,18 @@
 <body>
   <div id="splash"><img src="icons/Icon-192.png" alt="Club Yankees"></div>
   <script>
-    // Se quita el logo de carga cuando Flutter dibuja la primera pantalla.
     window.addEventListener('flutter-first-frame', function () {
+      // Se quita el logo de carga cuando Flutter dibuja la primera pantalla.
       var s = document.getElementById('splash');
       if (s) s.remove();
+      // Flutter pone su propio viewport, que permite zoom. En iPhone, al
+      // tocar un campo de texto Safari agranda la página y no la devuelve:
+      // desde ahí los toques caen corridos de los botones. Sin zoom, no pasa.
+      var meta = document.querySelector('meta[name="viewport"]');
+      if (meta) {
+        meta.setAttribute('content',
+          'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+      }
     });
   </script>
   <script src="flutter_bootstrap.js" async></script>
