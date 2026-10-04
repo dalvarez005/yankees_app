@@ -47,8 +47,18 @@ Future<void> main() async {
   });
   LocalNotifier.instance = DeviceLocalNotifier();
   // Sin configuración de Firebase en la plataforma queda sin push.
-  final push = await FirebasePushMessaging.create();
-  if (push != null) PushMessaging.instance = push;
+  Future<void> setUpPush() async {
+    final push = await FirebasePushMessaging.create();
+    if (push != null) PushMessaging.instance = push;
+  }
+
+  // En web Firebase baja sus scripts de internet: se hace en segundo plano
+  // (NotificationHost espera a PushMessaging.ready). En el teléfono es local.
+  if (kIsWeb) {
+    PushMessaging.ready = setUpPush();
+  } else {
+    await setUpPush();
+  }
 
   if (!Env.useMock) {
     final api = ApiClient(baseUrl: Env.apiBaseUrl);

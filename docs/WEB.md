@@ -11,7 +11,7 @@ completa. Android sigue usando el APK.
 | Leer boleta y fecha del comprobante | En el teléfono (ML Kit) | En la API (`POST /api/Payment/ReadVoucher`, Tesseract) |
 | Foto que se sube | WebP comprimido | La del navegador, achicada al elegirla (máx. 2400 px) |
 | Iniciar sesión con Google | Botón propio | Botón oficial de Google (requiere autorizar el dominio, abajo) |
-| Notificaciones del sistema | Sí (push FCM) | No por ahora: se ven en la campana al abrir la app |
+| Notificaciones del sistema | Sí (push FCM) | Push FCM web: se activan con el botón "Activar" del inicio; en iPhone solo con la app agregada a inicio (iOS 16.4+) |
 
 El resto (pantallas, permisos, cobros, hijos, categorías, recuperar contraseña,
 WhatsApp) es el mismo código.
@@ -79,7 +79,7 @@ Flutter). Volver atrás: volver a correr el script desde el commit anterior.
    `https://yankees.quantis.site` y, para pruebas, `http://localhost:5180`.
    Sin esto el botón de Google no aparece en web (correo y contraseña sí
    funcionan).
-3. **Push en el navegador (opcional, después):** registrar una app web en
-   Firebase, generar la clave VAPID y agregar el service worker de Firebase
-   Messaging. La API ya acepta `platform: "web"`. En iPhone solo funciona con la
-   app agregada a inicio y iOS 16.4 o más nuevo.
+3. **Push en el navegador:** configurado (app web de Firebase en
+   `lib/core/notifications/firebase_web_options.dart`, clave VAPID en
+   `Env.firebaseVapidKey`, `web/firebase-messaging-sw.js`). La API necesita
+   `Push__WebAppUrl=https://yankees.quantis.site` para que tocar el aviso abra la app.

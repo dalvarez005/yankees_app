@@ -39,10 +39,10 @@ class Env {
   );
 
   /// Clave pública VAPID de Firebase (Cloud Messaging → Certificados push
-  /// web). Sin ella la versión web no recibe push.
+  /// web). Es pública: identifica al servidor que envía los push web.
   static const firebaseVapidKey = String.fromEnvironment(
     'FIREBASE_VAPID_KEY',
-    defaultValue: '',
+    defaultValue: 'BPUh645pU75zSRUwVS5BETMGOMiOqX1_E8NJA1dQlGnDNX_3jQA8lYrsaYVJnkwhx7JNe1G4E9I3DnjJyTNFqSM',
   );
 
   /// `--dart-define=USE_MOCK=true` para trabajar sin API.

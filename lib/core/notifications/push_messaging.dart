@@ -15,6 +15,10 @@ import 'firebase_web_options.dart';
 abstract class PushMessaging {
   static PushMessaging instance = const NoopPushMessaging();
 
+  /// Se completa cuando [instance] ya quedó definido. En web Firebase se carga
+  /// en segundo plano para no demorar la apertura de la app.
+  static Future<void> ready = Future.value();
+
   /// false: no hay push; la app consulta las notificaciones por su cuenta.
   bool get available;
 

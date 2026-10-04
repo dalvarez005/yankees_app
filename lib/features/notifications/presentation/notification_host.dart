@@ -101,6 +101,10 @@ class _NotificationHostState extends State<NotificationHost>
   /// activarlo y mientras tanto la campana se actualiza consultando.
   Future<void> _setUpWeb() async {
     WebPush._host = this;
+    try {
+      await PushMessaging.ready;
+    } catch (_) {}
+    if (!mounted) return;
     final messaging = PushMessaging.instance;
     if (!messaging.available) {
       WebPush.needsInstall.value =
