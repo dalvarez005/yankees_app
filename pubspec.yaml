@@ -12,6 +12,9 @@ dependencies:
   firebase_messaging: ^16.7.0
   flutter:
     sdk: flutter
+  # Web: sin historial del navegador (ver main.dart).
+  flutter_web_plugins:
+    sdk: flutter
   flutter_image_compress: ^2.5.1
   flutter_local_notifications: ^22.3.1
   flutter_secure_storage: ^11.2.0

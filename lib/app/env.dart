@@ -38,6 +38,13 @@ class Env {
     defaultValue: '619026017478-lm9ffl7bhp8ohijfvluu9lam76j991bc.apps.googleusercontent.com',
   );
 
+  /// Clave pública VAPID de Firebase (Cloud Messaging → Certificados push
+  /// web). Sin ella la versión web no recibe push.
+  static const firebaseVapidKey = String.fromEnvironment(
+    'FIREBASE_VAPID_KEY',
+    defaultValue: '',
+  );
+
   /// `--dart-define=USE_MOCK=true` para trabajar sin API.
   static const useMock = bool.fromEnvironment('USE_MOCK');
 }

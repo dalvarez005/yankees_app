@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../notifications/presentation/web_push_prompt.dart';
+
 import '../../../core/widgets/club_logo.dart';
 
 import '../../../app/app_colors.dart';
@@ -271,6 +273,8 @@ class _FamilyPageState extends State<FamilyPage> {
         onBalance: _openPayments,
         onNotificationsChanged: _loadBalance,
       ),
+      // Fuera de children: así no tapa el estado vacío.
+      header: const WebPushPrompt(),
       empty: noKids,
       children: [
         // Los cobros son por familia: se muestran aunque no haya hijos.

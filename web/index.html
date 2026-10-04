@@ -20,6 +20,11 @@
 
   <title>Club Yankees</title>
   <link rel="manifest" href="manifest.json">
+  <!-- Bajar el código y el motor gráfico en paralelo desde el inicio (los
+       usa flutter_bootstrap.js; Safari usa la variante canvaskit/). -->
+  <link rel="preload" href="main.dart.js" as="script">
+  <link rel="preload" href="canvaskit/canvaskit.js" as="script">
+  <link rel="preload" href="canvaskit/canvaskit.wasm" as="fetch" type="application/wasm" crossorigin>
   <!-- Abre la conexión con la API mientras carga la app. -->
   <link rel="preconnect" href="https://yankeesapi.quantis.site" crossorigin>
   <style>

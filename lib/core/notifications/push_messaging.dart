@@ -4,6 +4,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../app/env.dart';
+import 'firebase_web_options.dart';
+
 /// Push del servidor (Firebase Cloud Messaging): identifica este teléfono
 /// con un token y avisa cuando llega o se toca un push.
 ///
@@ -15,8 +18,15 @@ abstract class PushMessaging {
   /// false: no hay push; la app consulta las notificaciones por su cuenta.
   bool get available;
 
-  /// "android" o "ios".
+  /// "android", "ios" o "web".
   String get platform;
+
+  /// Web: el navegador solo deja pedir el permiso con un toque del usuario
+  /// (ver `WebPushPrompt`). En el teléfono se pide al entrar.
+  Future<bool> get permissionGranted;
+
+  /// Pide el permiso de notificaciones. true si quedó concedido.
+  Future<bool> requestPermission();
 
   /// Token de FCM de esta instalación, o null si no se pudo obtener.
   Future<String?> token();
@@ -42,6 +52,10 @@ class NoopPushMessaging implements PushMessaging {
   @override
   String get platform => 'android';
   @override
+  Future<bool> get permissionGranted async => false;
+  @override
+  Future<bool> requestPermission() async => false;
+  @override
   Future<String?> token() async => null;
 
   @override
@@ -60,14 +74,21 @@ class FirebasePushMessaging implements PushMessaging {
   /// Inicia Firebase. Devuelve null si esta plataforma no tiene
   /// configuración (p. ej. iOS sin GoogleService-Info.plist o escritorio):
   /// la app sigue funcionando sin push.
+  ///
+  /// Web: requiere la clave VAPID y un navegador con push (en iPhone, solo
+  /// con la app agregada a la pantalla de inicio, iOS 16.4+).
   static Future<FirebasePushMessaging?> create() async {
-    if (kIsWeb ||
-        (defaultTargetPlatform != TargetPlatform.android &&
-            defaultTargetPlatform != TargetPlatform.iOS)) {
+    if (kIsWeb) {
+      if (Env.firebaseVapidKey.isEmpty) return null;
+    } else if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
       return null;
     }
     try {
-      await Firebase.initializeApp();
+      await Firebase.initializeApp(options: kIsWeb ? firebaseWebOptions : null);
+      if (kIsWeb && !await FirebaseMessaging.instance.isSupported()) {
+        return null;
+      }
       return FirebasePushMessaging._();
     } catch (e) {
       debugPrint('Push no disponible: $e');
@@ -81,12 +102,34 @@ class FirebasePushMessaging implements PushMessaging {
   bool get available => true;
 
   @override
-  String get platform =>
-      defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
+  String get platform => kIsWeb
+      ? 'web'
+      : defaultTargetPlatform == TargetPlatform.iOS
+      ? 'ios'
+      : 'android';
+
+  @override
+  Future<bool> get permissionGranted async =>
+      (await _fcm.getNotificationSettings()).authorizationStatus ==
+      AuthorizationStatus.authorized;
+
+  @override
+  Future<bool> requestPermission() async {
+    try {
+      final settings = await _fcm.requestPermission();
+      return settings.authorizationStatus == AuthorizationStatus.authorized;
+    } catch (e) {
+      debugPrint('No se pudo pedir el permiso de push: $e');
+      return false;
+    }
+  }
 
   @override
   Future<String?> token() async {
     try {
+      if (kIsWeb) {
+        return await _fcm.getToken(vapidKey: Env.firebaseVapidKey);
+      }
       if (defaultTargetPlatform == TargetPlatform.iOS && !await _apnsReady()) {
         return null;
       }

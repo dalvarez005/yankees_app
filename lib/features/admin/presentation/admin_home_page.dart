@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../notifications/presentation/web_push_prompt.dart';
+
 import '../../../core/layout/responsive.dart';
 
 import '../../../core/widgets/club_logo.dart';
@@ -233,6 +235,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        const WebPushPrompt(),
                         const ListHeader('Accesos'),
                         GridView(
                           shrinkWrap: true,

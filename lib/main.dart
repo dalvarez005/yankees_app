@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'app/app_theme.dart';
@@ -33,6 +34,10 @@ import 'features/profile/presentation/confirm_profile_page.dart';
 final _navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
+  // Web: las pantallas no se agregan al historial del navegador. Si no, en
+  // iPhone deslizar desde el borde hace un "atrás" del navegador (recarga y
+  // se ve el loading) en vez de volver dentro de la app con su animación.
+  setUrlStrategy(null);
   WidgetsFlutterBinding.ensureInitialized();
   // Poppins viene dentro de la app (assets/fonts): no se descarga.
   GoogleFonts.config.allowRuntimeFetching = false;

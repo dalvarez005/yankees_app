@@ -108,6 +108,11 @@ class _FakeRepo implements NotificationRepository {
 
 /// Push controlable desde la prueba.
 class _FakePush implements PushMessaging {
+  @override
+  Future<bool> get permissionGranted async => true;
+  @override
+  Future<bool> requestPermission() async => true;
+
   _FakePush({this.currentToken = 'tok-1', this.available = true});
 
   String? currentToken;
