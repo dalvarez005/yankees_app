@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 
 /// Configuración por ambiente. Se sobrescribe al compilar con
 /// `--dart-define=API_BASE_URL=local`, etc.
@@ -9,9 +9,12 @@ class Env {
   static const productionApiBaseUrl = 'https://yankeesapi.quantis.site';
 
   /// API levantada en la máquina de desarrollo: el emulador de Android
-  /// llega a ella por 10.0.2.2; el simulador de iOS por localhost.
+  /// llega a ella por 10.0.2.2; el navegador y el simulador de iOS, por
+  /// localhost.
   static String get localApiBaseUrl =>
-      Platform.isAndroid ? 'http://10.0.2.2:5114' : 'http://localhost:5114';
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+      ? 'http://10.0.2.2:5114'
+      : 'http://localhost:5114';
 
   /// URL de la API: la del servidor, salvo que se compile con
   /// `--dart-define=API_BASE_URL=...` (`local` usa [localApiBaseUrl]).

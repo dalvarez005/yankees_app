@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
 
-import '../core/access/permissions.dart';
 import '../features/admin/presentation/admin_home_page.dart';
 import '../features/auth/data/app_user.dart';
 import '../features/billing/presentation/pending_profile_page.dart';
@@ -17,8 +16,7 @@ import '../features/notifications/presentation/notification_host.dart';
 /// se usa Mi familia, que es la experiencia base de todo usuario.
 Widget homePageFor(AppUser user) {
   if (user.awaitingValidation) return PendingProfilePage(user: user);
-  return user.permissions.isEmpty ||
-          (!user.isAdmin && user.can(Permissions.ownDependents))
+  return user.permissions.isEmpty || user.managesOwnFamily
       ? FamilyPage(user: user)
       : AdminHomePage(user: user);
 }

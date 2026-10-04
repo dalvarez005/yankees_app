@@ -98,121 +98,111 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> with FormReady {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     return Scaffold(
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            AuthHeader(
-              title: 'Recuperar contraseña',
-              subtitle: _codeSent
-                  ? 'Escribe el código que enviamos a\n${_email.text.trim()}'
-                  : 'Te enviaremos un código a tu correo\npara que definas una nueva.',
-              showBack: true,
-            ),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                  child: Form(
-                    key: _formKey,
-                    autovalidateMode: AutovalidateMode.onUserInteraction,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: _codeSent
-                          ? [
-                              AuthField(
-                                label: 'Código',
-                                hint: '6 dígitos',
-                                icon: Icons.pin_outlined,
-                                controller: _code,
-                                keyboardType: TextInputType.number,
-                                autofillHints: const [
-                                  AutofillHints.oneTimeCode,
-                                ],
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                  LengthLimitingTextInputFormatter(6),
-                                ],
-                                validator: _codeError,
-                              ),
-                              const SizedBox(height: 18),
-                              AuthField(
-                                label: 'Contraseña nueva',
-                                hint: 'Mínimo 6 caracteres',
-                                icon: Icons.lock_outline_rounded,
-                                controller: _password,
-                                isPassword: true,
-                                autofillHints: const [
-                                  AutofillHints.newPassword,
-                                ],
-                                validator: Validators.password,
-                              ),
-                              const SizedBox(height: 18),
-                              AuthField(
-                                label: 'Confirmar contraseña',
-                                hint: 'Repite la contraseña nueva',
-                                icon: Icons.lock_outline_rounded,
-                                controller: _confirm,
-                                isPassword: true,
-                                textInputAction: TextInputAction.done,
-                                validator: (v) => Validators.confirmPassword(
-                                  v,
-                                  _password.text,
-                                ),
-                                onSubmitted: (_) {
-                                  if (_ready) _changePassword();
-                                },
-                              ),
-                              const SizedBox(height: 24),
-                              LoadingButton(
-                                label: 'Cambiar contraseña',
-                                loading: _loading,
-                                onPressed: _ready ? _changePassword : null,
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'El código vence en 15 minutos. Si no llega, '
-                                'revisa la carpeta de spam.',
-                                textAlign: TextAlign.center,
-                                style: text.bodySmall,
-                              ),
-                              TextButton(
-                                onPressed: _loading
-                                    ? null
-                                    : () => setState(() {
-                                        _codeSent = false;
-                                        _code.clear();
-                                      }),
-                                child: const Text('Pedir otro código'),
-                              ),
-                            ]
-                          : [
-                              AuthField(
-                                label: 'Correo electrónico',
-                                hint: 'tucorreo@ejemplo.com',
-                                icon: Icons.mail_outline_rounded,
-                                controller: _email,
-                                keyboardType: TextInputType.emailAddress,
-                                textInputAction: TextInputAction.done,
-                                autofillHints: const [AutofillHints.email],
-                                validator: Validators.email,
-                                onSubmitted: (_) {
-                                  if (_ready) _sendCode();
-                                },
-                              ),
-                              const SizedBox(height: 24),
-                              LoadingButton(
-                                label: 'Enviar código',
-                                loading: _loading,
-                                onPressed: _ready ? _sendCode : null,
-                              ),
+      body: AuthLayout(
+        header: AuthHeader(
+          title: 'Recuperar contraseña',
+          subtitle: _codeSent
+              ? 'Escribe el código que enviamos a\n${_email.text.trim()}'
+              : 'Te enviaremos un código a tu correo\npara que definas una nueva.',
+          showBack: true,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              child: Form(
+                key: _formKey,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: _codeSent
+                      ? [
+                          AuthField(
+                            label: 'Código',
+                            hint: '6 dígitos',
+                            icon: Icons.pin_outlined,
+                            controller: _code,
+                            keyboardType: TextInputType.number,
+                            autofillHints: const [AutofillHints.oneTimeCode],
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(6),
                             ],
-                    ),
-                  ),
+                            validator: _codeError,
+                          ),
+                          const SizedBox(height: 18),
+                          AuthField(
+                            label: 'Contraseña nueva',
+                            hint: 'Mínimo 6 caracteres',
+                            icon: Icons.lock_outline_rounded,
+                            controller: _password,
+                            isPassword: true,
+                            autofillHints: const [AutofillHints.newPassword],
+                            validator: Validators.password,
+                          ),
+                          const SizedBox(height: 18),
+                          AuthField(
+                            label: 'Confirmar contraseña',
+                            hint: 'Repite la contraseña nueva',
+                            icon: Icons.lock_outline_rounded,
+                            controller: _confirm,
+                            isPassword: true,
+                            textInputAction: TextInputAction.done,
+                            validator: (v) =>
+                                Validators.confirmPassword(v, _password.text),
+                            onSubmitted: (_) {
+                              if (_ready) _changePassword();
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                          LoadingButton(
+                            label: 'Cambiar contraseña',
+                            loading: _loading,
+                            onPressed: _ready ? _changePassword : null,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'El código vence en 15 minutos. Si no llega, '
+                            'revisa la carpeta de spam.',
+                            textAlign: TextAlign.center,
+                            style: text.bodySmall,
+                          ),
+                          TextButton(
+                            onPressed: _loading
+                                ? null
+                                : () => setState(() {
+                                    _codeSent = false;
+                                    _code.clear();
+                                  }),
+                            child: const Text('Pedir otro código'),
+                          ),
+                        ]
+                      : [
+                          AuthField(
+                            label: 'Correo electrónico',
+                            hint: 'tucorreo@ejemplo.com',
+                            icon: Icons.mail_outline_rounded,
+                            controller: _email,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.done,
+                            autofillHints: const [AutofillHints.email],
+                            validator: Validators.email,
+                            onSubmitted: (_) {
+                              if (_ready) _sendCode();
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                          LoadingButton(
+                            label: 'Enviar código',
+                            loading: _loading,
+                            onPressed: _ready ? _sendCode : null,
+                          ),
+                        ],
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

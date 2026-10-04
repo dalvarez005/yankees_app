@@ -31,6 +31,9 @@ abstract class AuthRepository {
   /// usuario cancela el selector de cuentas.
   Future<AppUser?> signInWithGoogle();
 
+  /// Web: el botón de Google entrega el idToken directamente.
+  Future<AppUser> signInWithGoogleIdToken(String idToken);
+
   /// Pide el código de recuperación. La API responde igual exista o no la
   /// cuenta, así que esto no confirma que el correo esté registrado.
   Future<void> sendPasswordReset(String email);
@@ -161,6 +164,10 @@ class MockAuthRepository implements AuthRepository {
     _users[key] = (user: user, password: password);
     return _current = user;
   }
+
+  @override
+  Future<AppUser> signInWithGoogleIdToken(String idToken) async =>
+      (await signInWithGoogle())!;
 
   @override
   Future<AppUser?> signInWithGoogle() async {

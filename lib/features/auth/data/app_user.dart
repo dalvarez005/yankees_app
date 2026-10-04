@@ -57,6 +57,11 @@ class AppUser {
   /// Entra al panel de administración (tiene algún permiso de admin).
   bool get isAdmin => permissions.any(Permissions.admin.contains);
 
+  /// Padre/madre/tutor: registra a sus hijos y paga cuotas. Los
+  /// administradores quedan fuera de ese flujo aunque su rol tuviera el
+  /// permiso (la API tampoco se lo concede).
+  bool get managesOwnFamily => can(Permissions.ownDependents) && !isAdmin;
+
   /// Algunos endpoints de la API exigen el rol SUPER_ADMIN (no un permiso).
   bool get isSuperAdmin => roleName.trim().toUpperCase() == 'SUPER_ADMIN';
 

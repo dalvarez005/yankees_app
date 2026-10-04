@@ -1,0 +1,16 @@
+# App web en el servidor. La imagen la construye y envía deploy/web/deploy.sh.
+name: yankees-web
+
+services:
+  web:
+    image: yankees-web:latest
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-5180}:80"
+    # Archivos estáticos: casi no usa memoria ni CPU.
+    mem_limit: 64m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

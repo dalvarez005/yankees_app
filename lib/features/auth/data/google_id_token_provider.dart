@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -15,15 +13,44 @@ abstract class GoogleIdTokenProvider {
   Future<void> signOut();
 }
 
-class GoogleSignInIdTokenProvider implements GoogleIdTokenProvider {
-  Future<void>? _init;
+/// GoogleSignIn se inicializa una sola vez para toda la app.
+Future<void>? _googleInit;
 
-  Future<void> _ensureInitialized() =>
-      _init ??= GoogleSignIn.instance.initialize(
-        serverClientId: Env.googleServerClientId,
-        // En Android el clientId no se usa (va por paquete + SHA-1).
-        clientId: Platform.isIOS ? Env.googleIosClientId : null,
-      );
+Future<void> initializeGoogleSignIn() =>
+    _googleInit ??= GoogleSignIn.instance.initialize(
+      // Web solo admite clientId (el web); en móvil el idToken se pide para
+      // el client id web (serverClientId).
+      serverClientId: kIsWeb ? null : Env.googleServerClientId,
+      // Web usa el client id web; iOS el suyo; en Android no se usa (va por
+      // paquete + SHA-1).
+      clientId: kIsWeb
+          ? Env.googleServerClientId
+          : defaultTargetPlatform == TargetPlatform.iOS
+          ? Env.googleIosClientId
+          : null,
+    );
+
+/// En web Google no deja abrir su selector desde un botón propio: se muestra
+/// su botón (`GoogleSignInArea`) y el idToken llega por aquí.
+///
+/// Si el usuario cierra la ventana de Google llega un error, pero el stream
+/// sigue: el siguiente intento vuelve a funcionar.
+Stream<String> googleWebIdTokens() async* {
+  await initializeGoogleSignIn();
+  yield* GoogleSignIn.instance.authenticationEvents
+      .where((event) => event is GoogleSignInAuthenticationEventSignIn)
+      .map(
+        (event) => (event as GoogleSignInAuthenticationEventSignIn)
+            .user
+            .authentication
+            .idToken,
+      )
+      .where((token) => token != null)
+      .cast<String>();
+}
+
+class GoogleSignInIdTokenProvider implements GoogleIdTokenProvider {
+  Future<void> _ensureInitialized() => initializeGoogleSignIn();
 
   @override
   Future<String?> getIdToken() async {

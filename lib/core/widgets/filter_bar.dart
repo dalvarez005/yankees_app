@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../layout/responsive.dart';
+
 import '../../app/app_colors.dart';
 
 /// Una opción de un filtro. [value] null = "Todos".
@@ -113,7 +115,8 @@ class _FilterBarState extends State<FilterBar> {
     final active = _active;
     final hasSearch = widget.searchHint != null;
     return Padding(
-      padding: widget.padding,
+      // Alineado con la lista centrada en pantallas anchas.
+      padding: Responsive.centered(context, widget.padding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

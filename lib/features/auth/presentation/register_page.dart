@@ -8,6 +8,7 @@ import 'widgets/auth_field.dart';
 import 'widgets/auth_header.dart';
 import 'widgets/auth_switch_link.dart';
 import 'widgets/google_button.dart';
+import 'widgets/google_sign_in_area.dart';
 import 'widgets/loading_button.dart';
 import '../../../core/widgets/feedback.dart';
 import '../../../core/widgets/form_ready.dart';
@@ -69,6 +70,22 @@ class _RegisterPageState extends State<RegisterPage> with FormReady {
     }
   }
 
+  /// Web: el botón de Google ya entregó el idToken.
+  Future<void> _googleWithIdToken(String idToken) async {
+    if (_loading || _googleLoading) return;
+    setState(() => _googleLoading = true);
+    try {
+      final user = await AuthRepository.instance.signInWithGoogleIdToken(
+        idToken,
+      );
+      if (mounted) enterApp(context, user);
+    } on AuthException catch (e) {
+      if (mounted) showAppMessage(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _googleLoading = false);
+    }
+  }
+
   Future<void> _google() async {
     FocusScope.of(context).unfocus();
     setState(() => _googleLoading = true);
@@ -95,104 +112,99 @@ class _RegisterPageState extends State<RegisterPage> with FormReady {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            const AuthHeader(
-              title: 'Crear cuenta',
-              subtitle: 'Regístrate como padre, madre o tutor\npara ver a tus hijos inscritos.',
-              showBack: true,
-            ),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                  child: Form(
-                    key: _formKey,
-                    autovalidateMode: AutovalidateMode.onUserInteraction,
-                    child: AutofillGroup(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          GoogleButton(
-                            loading: _googleLoading,
-                            onPressed: _loading ? null : _google,
-                          ),
-                          const OrDivider(),
-                          AuthField(
-                            label: 'Nombre',
-                            hint: 'Ej. Carlos',
-                            icon: Icons.badge_outlined,
-                            controller: _firstName,
-                            textCapitalization: TextCapitalization.words,
-                            autofillHints: const [AutofillHints.givenName],
-                            validator: (v) => Validators.name(v, 'El nombre'),
-                          ),
-                          const SizedBox(height: 16),
-                          AuthField(
-                            label: 'Primer apellido',
-                            hint: 'Ej. Pérez',
-                            icon: Icons.badge_outlined,
-                            controller: _firstLastName,
-                            textCapitalization: TextCapitalization.words,
-                            autofillHints: const [AutofillHints.familyName],
-                            validator: (v) => Validators.name(v, 'El apellido'),
-                          ),
-                          const SizedBox(height: 16),
-                          AuthField(
-                            label: 'Correo electrónico',
-                            hint: 'tucorreo@ejemplo.com',
-                            icon: Icons.mail_outline_rounded,
-                            controller: _email,
-                            keyboardType: TextInputType.emailAddress,
-                            autofillHints: const [AutofillHints.email],
-                            validator: Validators.email,
-                          ),
-                          const SizedBox(height: 16),
-                          AuthField(
-                            label: 'Contraseña',
-                            hint: 'Mínimo 6 caracteres',
-                            icon: Icons.lock_outline_rounded,
-                            controller: _password,
-                            isPassword: true,
-                            autofillHints: const [AutofillHints.newPassword],
-                            validator: Validators.password,
-                          ),
-                          const SizedBox(height: 16),
-                          AuthField(
-                            label: 'Confirmar contraseña',
-                            hint: 'Repite tu contraseña',
-                            icon: Icons.lock_outline_rounded,
-                            controller: _confirm,
-                            isPassword: true,
-                            textInputAction: TextInputAction.done,
-                            validator: (v) =>
-                                Validators.confirmPassword(v, _password.text),
-                            onSubmitted: (_) => _submit(),
-                          ),
-                          const SizedBox(height: 24),
-                          LoadingButton(
-                            label: 'Crear cuenta',
-                            loading: _loading,
-                            onPressed: _googleLoading || !_ready
-                                ? null
-                                : _submit,
-                          ),
-                          const SizedBox(height: 12),
-                          AuthSwitchLink(
-                            question: '¿Ya tienes cuenta?',
-                            action: 'Inicia sesión',
-                            onTap: () => Navigator.of(context).pop(),
-                          ),
-                        ],
+      body: AuthLayout(
+        header: const AuthHeader(
+          title: 'Crear cuenta',
+          subtitle: 'Regístrate como padre, madre o tutor\npara ver a tus hijos inscritos.',
+          showBack: true,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              child: Form(
+                key: _formKey,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                child: AutofillGroup(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      GoogleSignInArea(
+                        loading: _googleLoading,
+                        onPressed: _loading ? null : _google,
+                        onWebIdToken: _googleWithIdToken,
                       ),
-                    ),
+                      const OrDivider(),
+                      AuthField(
+                        label: 'Nombre',
+                        hint: 'Ej. Carlos',
+                        icon: Icons.badge_outlined,
+                        controller: _firstName,
+                        textCapitalization: TextCapitalization.words,
+                        autofillHints: const [AutofillHints.givenName],
+                        validator: (v) => Validators.name(v, 'El nombre'),
+                      ),
+                      const SizedBox(height: 16),
+                      AuthField(
+                        label: 'Primer apellido',
+                        hint: 'Ej. Pérez',
+                        icon: Icons.badge_outlined,
+                        controller: _firstLastName,
+                        textCapitalization: TextCapitalization.words,
+                        autofillHints: const [AutofillHints.familyName],
+                        validator: (v) => Validators.name(v, 'El apellido'),
+                      ),
+                      const SizedBox(height: 16),
+                      AuthField(
+                        label: 'Correo electrónico',
+                        hint: 'tucorreo@ejemplo.com',
+                        icon: Icons.mail_outline_rounded,
+                        controller: _email,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.email],
+                        validator: Validators.email,
+                      ),
+                      const SizedBox(height: 16),
+                      AuthField(
+                        label: 'Contraseña',
+                        hint: 'Mínimo 6 caracteres',
+                        icon: Icons.lock_outline_rounded,
+                        controller: _password,
+                        isPassword: true,
+                        autofillHints: const [AutofillHints.newPassword],
+                        validator: Validators.password,
+                      ),
+                      const SizedBox(height: 16),
+                      AuthField(
+                        label: 'Confirmar contraseña',
+                        hint: 'Repite tu contraseña',
+                        icon: Icons.lock_outline_rounded,
+                        controller: _confirm,
+                        isPassword: true,
+                        textInputAction: TextInputAction.done,
+                        validator: (v) =>
+                            Validators.confirmPassword(v, _password.text),
+                        onSubmitted: (_) => _submit(),
+                      ),
+                      const SizedBox(height: 24),
+                      LoadingButton(
+                        label: 'Crear cuenta',
+                        loading: _loading,
+                        onPressed: _googleLoading || !_ready ? null : _submit,
+                      ),
+                      const SizedBox(height: 12),
+                      AuthSwitchLink(
+                        question: '¿Ya tienes cuenta?',
+                        action: 'Inicia sesión',
+                        onTap: () => Navigator.of(context).pop(),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

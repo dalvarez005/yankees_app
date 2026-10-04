@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'app/app_theme.dart';
 import 'app/env.dart';
@@ -31,6 +34,12 @@ final _navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Poppins viene dentro de la app (assets/fonts): no se descarga.
+  GoogleFonts.config.allowRuntimeFetching = false;
+  LicenseRegistry.addLicense(() async* {
+    final license = await rootBundle.loadString('assets/fonts/OFL.txt');
+    yield LicenseEntryWithLineBreaks(['google_fonts'], license);
+  });
   LocalNotifier.instance = DeviceLocalNotifier();
   // Sin configuración de Firebase en la plataforma queda sin push.
   final push = await FirebasePushMessaging.create();

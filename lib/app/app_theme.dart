@@ -14,11 +14,17 @@ class AppTheme {
         surface: AppColors.surface,
       ),
       scaffoldBackgroundColor: AppColors.background,
-      // Transición y gesto de deslizar para volver estilo iOS en ambas plataformas.
+      // Teléfono (app y web en iPhone/Android): deslizar estilo iOS, con el
+      // gesto de volver. Web en PC: un fundido corto; el zoom por defecto de
+      // escritorio se ve trabado en el navegador.
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: CupertinoPageTransitionsBuilder(),
           TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: _FadePageTransitionsBuilder(),
+          TargetPlatform.macOS: _FadePageTransitionsBuilder(),
+          TargetPlatform.windows: _FadePageTransitionsBuilder(),
+          TargetPlatform.fuchsia: _FadePageTransitionsBuilder(),
         },
       ),
     );
@@ -67,6 +73,10 @@ class AppTheme {
           ),
         ),
       ),
+      // En PC las hojas inferiores no ocupan toda la pantalla.
+      bottomSheetTheme: const BottomSheetThemeData(
+        constraints: BoxConstraints(maxWidth: 640),
+      ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.navy,
@@ -75,4 +85,24 @@ class AppTheme {
       ),
     );
   }
+}
+
+/// Fundido de 150 ms, sin escalar ni deslizar la pantalla.
+class _FadePageTransitionsBuilder extends PageTransitionsBuilder {
+  const _FadePageTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 150);
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => FadeTransition(
+    opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+    child: child,
+  );
 }

@@ -5,6 +5,8 @@ import '../../../../app/app_colors.dart';
 
 /// Botón "Continuar con Google": mismo tamaño y forma que [LoadingButton],
 /// en blanco con borde como pide la guía de marca de Google.
+const _tint = Color(0xFFE6ECF5);
+
 class GoogleButton extends StatelessWidget {
   const GoogleButton({
     super.key,
@@ -22,11 +24,13 @@ class GoogleButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: loading ? null : onPressed,
       style: OutlinedButton.styleFrom(
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.text,
-        disabledBackgroundColor: AppColors.surface,
+        // Azul del club muy suave: acompaña a "Ingresar" sin competir con él.
+        backgroundColor: _tint,
+        foregroundColor: AppColors.navy,
+        disabledBackgroundColor: _tint,
+        overlayColor: AppColors.navy,
         minimumSize: const Size.fromHeight(54),
-        side: const BorderSide(color: AppColors.border),
+        side: BorderSide.none,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: Theme.of(context).filledButtonTheme.style?.textStyle
             ?.resolve({}),

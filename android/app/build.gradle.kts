@@ -6,6 +6,14 @@ plugins {
 }
 
 android {
+    // Comprime las librerías nativas (Flutter, OCR) dentro del APK: el archivo
+    // que se descarga pesa casi la mitad; se descomprimen al instalar.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     namespace = "com.clubyankees.yankees"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion

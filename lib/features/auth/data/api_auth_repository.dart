@@ -206,10 +206,22 @@ class ApiAuthRepository implements AuthRepository {
     }
   }
 
+  @override
+  Future<AppUser> signInWithGoogleIdToken(String idToken) async {
+    try {
+      return await _signInWithIdToken(idToken);
+    } catch (_) {
+      throw const AuthException(googleErrorMessage);
+    }
+  }
+
   Future<AppUser?> _signInWithGoogle() async {
     final idToken = await _google.getIdToken();
     if (idToken == null) return null;
+    return _signInWithIdToken(idToken);
+  }
 
+  Future<AppUser> _signInWithIdToken(String idToken) async {
     final json = await _call(
       () => _api.post('/api/GoogleAuth/signin-google', {
         'typeOperation': 'A',

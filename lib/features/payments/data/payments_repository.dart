@@ -29,6 +29,11 @@ abstract class PaymentsRepository {
     VoucherUpload file,
   );
 
+  /// Texto del comprobante leído por la API (OCR en el servidor), sin
+  /// guardarlo. Lo usa la versión web, que no tiene OCR propio. null si no
+  /// se leyó nada.
+  Future<String?> readVoucherText(List<int> bytes, {String fileName});
+
   // ---- Validación (pagos.validar)
   /// Cobros con comprobante en revisión (más antiguos primero).
   Future<List<Charge>> reviewQueue({int page = 1, int pageSize = 100});
@@ -117,6 +122,24 @@ class ApiPaymentsRepository implements PaymentsRepository {
       ),
     );
     return _charge(json);
+  }
+
+  @override
+  Future<String?> readVoucherText(
+    List<int> bytes, {
+    String fileName = 'comprobante.jpg',
+  }) async {
+    final json = await _call(
+      () => _api.postFile(
+        '$_base/ReadVoucher',
+        fields: const {},
+        fileField: 'file',
+        bytes: bytes,
+        fileName: fileName,
+      ),
+    );
+    final text = json['ocrText']?.toString().trim() ?? '';
+    return text.isEmpty ? null : text;
   }
 
   @override
@@ -387,6 +410,18 @@ class MockPaymentsRepository implements PaymentsRepository {
   Future<AccountBalance> myBalance() async {
     await _wait();
     return AccountBalance.fromCharges(_mine);
+  }
+
+  /// Texto fijo para probar la lectura sin API.
+  String? readVoucherResult;
+
+  @override
+  Future<String?> readVoucherText(
+    List<int> bytes, {
+    String fileName = 'comprobante.jpg',
+  }) async {
+    await Future.delayed(latency);
+    return readVoucherResult;
   }
 
   @override

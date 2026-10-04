@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/club_logo.dart';
+
 import '../../../app/app_colors.dart';
 import '../../../core/widgets/app_ui.dart';
 import '../../auth/data/app_user.dart';
@@ -9,7 +11,6 @@ import '../data/dependent.dart';
 import '../data/dependent_repository.dart';
 import 'dependent_form_page.dart';
 import '../../../core/widgets/feedback.dart';
-import '../../../core/format/formats.dart';
 import '../../payments/data/payment_models.dart';
 import '../../payments/data/payments_repository.dart';
 import '../../payments/presentation/charge_detail_page.dart';
@@ -20,12 +21,9 @@ import '../../notifications/presentation/notifications_page.dart';
 
 /// Inicio del padre/madre/tutor: sus hijos registrados.
 class FamilyPage extends StatefulWidget {
-  const FamilyPage({super.key, required this.user, this.embedded = false});
+  const FamilyPage({super.key, required this.user});
 
   final AppUser user;
-
-  /// Abierta desde el panel de administración: botón atrás en vez del perfil.
-  final bool embedded;
 
   @override
   State<FamilyPage> createState() => _FamilyPageState();
@@ -226,7 +224,6 @@ class _FamilyPageState extends State<FamilyPage> {
   @override
   Widget build(BuildContext context) {
     final dependents = _dependents;
-    final balance = _balance;
     final urgent = _urgent;
     final list = [
       for (final d in dependents ?? const <Dependent>[])
@@ -238,10 +235,6 @@ class _FamilyPageState extends State<FamilyPage> {
         ),
     ];
     final payments = [
-      if (widget.embedded && balance != null) ...[
-        _EmbeddedBalance(balance: balance, onTap: _openPayments),
-        const SizedBox(height: 10),
-      ],
       if (urgent.isNotEmpty) ...[
         Row(
           children: [
@@ -268,27 +261,16 @@ class _FamilyPageState extends State<FamilyPage> {
       loading: dependents == null,
       error: _error,
       onRetry: _load,
-      padding: EdgeInsets.fromLTRB(16, widget.embedded ? 16 : 4, 16, 100),
-      hero: widget.embedded
-          ? null
-          : _FamilyHeader(
-              user: _user,
-              summary: _summary,
-              onProfile: _openProfile,
-              balance: _balance,
-              showBalance: _hasPayments,
-              onBalance: _openPayments,
-              onNotificationsChanged: _loadBalance,
-            ),
-      header: widget.embedded
-          ? Padding(
-              padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
-              child: Text(
-                _summary,
-                style: const TextStyle(color: AppColors.textMuted),
-              ),
-            )
-          : null,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+      hero: _FamilyHeader(
+        user: _user,
+        summary: _summary,
+        onProfile: _openProfile,
+        balance: _balance,
+        showBalance: _hasPayments,
+        onBalance: _openPayments,
+        onNotificationsChanged: _loadBalance,
+      ),
       empty: noKids,
       children: [
         // Los cobros son por familia: se muestran aunque no haya hijos.
@@ -299,7 +281,6 @@ class _FamilyPageState extends State<FamilyPage> {
     );
 
     return Scaffold(
-      appBar: widget.embedded ? pageAppBar(context, 'Mi familia') : null,
       floatingActionButton: (dependents?.isNotEmpty ?? false)
           ? FloatingActionButton.extended(
               onPressed: _openForm,
@@ -312,7 +293,7 @@ class _FamilyPageState extends State<FamilyPage> {
       body: RefreshIndicator(
         onRefresh: _load,
         color: AppColors.navy,
-        edgeOffset: widget.embedded ? 0 : 80,
+        edgeOffset: 80,
         child: content,
       ),
     );
@@ -352,19 +333,7 @@ class _FamilyHeader extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(11),
-                    ),
-                    child: const Icon(
-                      Icons.sports_baseball_rounded,
-                      color: AppColors.navy,
-                      size: 22,
-                    ),
-                  ),
+                  const ClubLogo(size: 40),
                   const SizedBox(width: 10),
                   Text(
                     'MI FAMILIA',
@@ -492,40 +461,4 @@ class _DependentCard extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Saldo dentro de "Mi familia" abierta desde el panel de admin.
-class _EmbeddedBalance extends StatelessWidget {
-  const _EmbeddedBalance({required this.balance, required this.onTap});
-
-  final AccountBalance balance;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => ListCard(
-    onTap: onTap,
-    leading: AppAvatar(
-      seed: 'saldo',
-      icon: balance.clear
-          ? Icons.verified_rounded
-          : balance.solvent
-          ? Icons.account_balance_wallet_outlined
-          : Icons.warning_amber_rounded,
-    ),
-    title: balance.clear
-        ? 'Solvente'
-        : balance.solvent
-        ? formatMoney(balance.totalOwed)
-        : 'INSOLVENTE · ${formatMoney(balance.overdueAmount)} vencido',
-    subtitle: balance.clear
-        ? 'Estás al día con el club'
-        : 'Toca para ver tus pagos',
-    footer: balance.solvent
-        ? null
-        : const Pill(
-            'Pago vencido',
-            tone: PillTone.danger,
-            icon: Icons.warning_amber_rounded,
-          ),
-  );
 }

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../layout/responsive.dart';
+
 import 'package:flutter/services.dart';
 
 import '../../app/app_colors.dart';
@@ -51,9 +54,17 @@ class _StitchesPainter extends CustomPainter {
 
 /// Fondo azul con degradado, costuras y curva inferior (como el login).
 class BrandHeader extends StatelessWidget {
-  const BrandHeader({super.key, required this.child, this.curve = true});
+  const BrandHeader({
+    super.key,
+    required this.child,
+    this.curve = true,
+    this.maxWidth = Responsive.listMaxWidth,
+  });
 
   final Widget child;
+
+  /// En pantallas anchas el fondo ocupa todo y el contenido se centra.
+  final double maxWidth;
 
   /// Borde inferior curvo; sin curva queda recto para montar tarjetas encima.
   final bool curve;
@@ -81,7 +92,7 @@ class BrandHeader extends StatelessWidget {
             bottom: 10,
             child: BaseballStitches(size: 140),
           ),
-          child,
+          MaxWidth(maxWidth: maxWidth, child: child),
         ],
       ),
     );
@@ -558,7 +569,11 @@ class AsyncListView extends StatelessWidget {
     this.header,
     this.hero,
     this.padding = const EdgeInsets.fromLTRB(16, 16, 16, 100),
+    this.maxWidth = Responsive.listMaxWidth,
   });
+
+  /// Ancho máximo del contenido en pantallas anchas.
+  final double maxWidth;
 
   final bool loading;
   final String? error;
@@ -588,15 +603,16 @@ class AsyncListView extends StatelessWidget {
       else
         ...children,
     ];
+    final inset = Responsive.centered(context, padding, maxWidth: maxWidth);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: hero == null ? padding : EdgeInsets.zero,
+      padding: hero == null ? inset : EdgeInsets.zero,
       children: hero == null
           ? body
           : [
               hero!,
               Padding(
-                padding: padding,
+                padding: inset,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: body,

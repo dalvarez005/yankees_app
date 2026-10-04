@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -635,7 +636,14 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
     XFile? file;
     try {
       // Sin redimensionar: se necesita el original con su EXIF.
-      file = await ImagePicker().pickImage(source: source);
+      file = await ImagePicker().pickImage(
+        source: source,
+        // En web la foto viaja tal cual a la API (máx. 8 MB): se achica
+        // aquí. En el teléfono se comprime después a WebP.
+        maxWidth: kIsWeb ? 2400 : null,
+        maxHeight: kIsWeb ? 2400 : null,
+        imageQuality: kIsWeb ? 85 : null,
+      );
     } catch (_) {
       if (mounted) {
         showAppMessage(
@@ -671,8 +679,14 @@ class _UploadVoucherPageState extends State<UploadVoucherPage> {
     VoucherAnalysis a;
     try {
       a = await future;
-    } catch (_) {
-      if (mounted && _analysis == future) setState(() => _analyzing = false);
+    } catch (e) {
+      if (mounted && _analysis == future) {
+        setState(() => _analyzing = false);
+        // En web la lectura la hace la API: sin conexión se avisa.
+        if (e is PaymentsException) {
+          showAppMessage(context, e.message, error: true);
+        }
+      }
       return;
     }
     if (!mounted || _analysis != future) return;

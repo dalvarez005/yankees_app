@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/layout/responsive.dart';
+
+import '../../../core/widgets/club_logo.dart';
+
 import '../../../app/app_colors.dart';
 import '../../../core/access/permissions.dart';
 import '../../../core/widgets/app_ui.dart';
 import '../../auth/data/app_user.dart';
 import '../../categories/presentation/categories_admin_page.dart';
-import '../../family/presentation/family_page.dart';
 import '../../payments/data/payments_repository.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/pending_users_page.dart';
@@ -196,14 +199,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
           subtitle: 'Cuotas, día límite y WhatsApp',
           onTap: () => _open(PaymentSettingsPage(user: _user)),
         ),
-      if (_user.can(Permissions.ownDependents))
-        _Action(
-          icon: Icons.family_restroom_rounded,
-          color: const Color(0xFF15803D),
-          title: 'Mi familia',
-          subtitle: 'Tus hijos inscritos',
-          onTap: () => _open(FamilyPage(user: _user, embedded: true)),
-        ),
     ];
 
     return Scaffold(
@@ -222,7 +217,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
               onNotificationsChanged: _loadStats,
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+              padding: Responsive.centered(
+                context,
+                const EdgeInsets.fromLTRB(20, 4, 20, 32),
+                maxWidth: Responsive.dashboardMaxWidth,
+              ),
               child: actions.isEmpty
                   ? const EmptyState(
                       icon: Icons.lock_outline_rounded,
@@ -235,15 +234,24 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const ListHeader('Accesos'),
-                        GridView.count(
-                          crossAxisCount: 2,
+                        GridView(
                           shrinkWrap: true,
                           // Sin el padding del área segura (dejaba un hueco).
                           padding: EdgeInsets.zero,
                           physics: const NeverScrollableScrollPhysics(),
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 1.12,
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                // 2 en teléfono; más columnas en tablet y PC.
+                                crossAxisCount: Responsive.columns(
+                                  MediaQuery.sizeOf(context).width
+                                      .clamp(0, Responsive.dashboardMaxWidth)
+                                      .toDouble(),
+                                ),
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                // Alto fijo: con más columnas no se estiran.
+                                mainAxisExtent: 160,
+                              ),
                           children: actions,
                         ),
                       ],
@@ -273,6 +281,7 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     return BrandHeader(
+      maxWidth: Responsive.dashboardMaxWidth,
       child: SafeArea(
         bottom: false,
         child: Padding(
@@ -282,19 +291,7 @@ class _Header extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(11),
-                    ),
-                    child: const Icon(
-                      Icons.sports_baseball_rounded,
-                      color: AppColors.navy,
-                      size: 22,
-                    ),
-                  ),
+                  const ClubLogo(size: 40),
                   const SizedBox(width: 10),
                   Text(
                     'CLUB YANKEES',

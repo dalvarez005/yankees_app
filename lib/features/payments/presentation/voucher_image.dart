@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/app_colors.dart';
@@ -30,8 +31,19 @@ Future<void> showImageViewer(
     ),
   );
 
+  // En web la foto elegida es una URL del navegador (blob:), no un archivo.
   final Widget image = localPath != null
-      ? Image.file(File(localPath), fit: BoxFit.contain, errorBuilder: broken)
+      ? (kIsWeb
+            ? Image.network(
+                localPath,
+                fit: BoxFit.contain,
+                errorBuilder: broken,
+              )
+            : Image.file(
+                File(localPath),
+                fit: BoxFit.contain,
+                errorBuilder: broken,
+              ))
       : url != null
       ? Image.network(
           url,

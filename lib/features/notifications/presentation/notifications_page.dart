@@ -185,7 +185,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case NotificationTypes.voucherApproved ||
               NotificationTypes.voucherRejected ||
               NotificationTypes.chargeCreated
-          when u.can(Permissions.ownDependents):
+          when u.managesOwnFamily:
         if (chargeId != null) {
           try {
             final charges = await PaymentsRepository.instance.myCharges();
@@ -197,8 +197,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           }
         }
         return const MyPaymentsPage();
-      case NotificationTypes.paymentReminder
-          when u.can(Permissions.ownDependents):
+      case NotificationTypes.paymentReminder when u.managesOwnFamily:
         return const MyPaymentsPage();
     }
     return null;

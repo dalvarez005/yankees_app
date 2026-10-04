@@ -9,6 +9,7 @@ import 'package:yankees/app/app_theme.dart';
 import 'package:yankees/core/access/permissions.dart';
 import 'package:yankees/core/network/api_client.dart';
 import 'package:yankees/features/admin/data/admin_repository.dart';
+import 'package:yankees/app/home.dart';
 import 'package:yankees/features/admin/presentation/admin_home_page.dart';
 import 'package:yankees/features/auth/data/app_user.dart';
 import 'package:yankees/features/categories/data/category_repository.dart';
@@ -104,6 +105,26 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    test('un admin no gestiona hijos propios aunque tenga el permiso', () {
+      const admin = AppUser(
+        id: 'a',
+        email: 'a@b.com',
+        firstName: 'A',
+        firstLastName: 'B',
+        permissions: {Permissions.paymentsReview, Permissions.ownDependents},
+      );
+      const parent = AppUser(
+        id: 'p',
+        email: 'p@b.com',
+        firstName: 'P',
+        firstLastName: 'B',
+        permissions: {Permissions.ownDependents},
+      );
+      expect(admin.managesOwnFamily, isFalse);
+      expect(parent.managesOwnFamily, isTrue);
+      expect(homePageFor(admin), isA<AdminHomePage>());
+    });
+
     testWidgets('super admin ve todo', (tester) async {
       await pump(tester, {...Permissions.admin, Permissions.ownDependents});
       for (final s in [
@@ -116,7 +137,6 @@ void main() {
         'Categorías',
         'Jugadores',
         'Configuración',
-        'Mi familia',
       ]) {
         expect(find.text(s), findsWidgets, reason: s);
       }
@@ -124,7 +144,9 @@ void main() {
       // El resumen solo trae lo que espera una acción.
       expect(find.text('Pagos por validar'), findsOneWidget);
       expect(find.text('Insolventes'), findsWidgets);
-      for (final gone in ['Cuentas', 'Roles', 'Mis hijos']) {
+      // Los administradores no participan del flujo de padre, aunque el rol
+      // traiga el permiso de gestionar hijos.
+      for (final gone in ['Cuentas', 'Roles', 'Mis hijos', 'Mi familia']) {
         expect(find.text(gone), findsNothing, reason: gone);
       }
       expect(find.text('Asignar cobro'), findsNothing);

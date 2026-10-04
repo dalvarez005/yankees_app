@@ -247,7 +247,7 @@ class BalanceHeaderCard extends StatelessWidget {
                           alpha: insolvent ? 1 : 0.75,
                         ),
                         fontSize: 12.5,
-                        fontWeight: insolvent ? FontWeight.w800 : null,
+                        fontWeight: insolvent ? FontWeight.w700 : null,
                         letterSpacing: insolvent ? 1 : null,
                       ),
                     ),

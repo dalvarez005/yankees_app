@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -183,11 +182,9 @@ class ApiClient {
       throw const ApiException(
         'El servidor tardó demasiado en responder. Intenta de nuevo.',
       );
-    } on SocketException {
-      throw const ApiException(
-        'No se pudo conectar con el servidor. Revisa tu conexión.',
-      );
     } on http.ClientException {
+      // El cliente de http envuelve aquí los errores de red (SocketException
+      // en móvil, fallo de fetch en el navegador).
       throw const ApiException(
         'No se pudo conectar con el servidor. Revisa tu conexión.',
       );

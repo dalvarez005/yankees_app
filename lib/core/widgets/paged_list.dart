@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../layout/responsive.dart';
+
 import '../../app/app_colors.dart';
 import 'app_ui.dart';
 
@@ -127,6 +129,7 @@ class PagedListView<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final padding = Responsive.centered(context, this.padding);
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
